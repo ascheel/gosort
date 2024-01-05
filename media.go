@@ -72,6 +72,9 @@ func (m *Media) Init() (error) {
 		return err
 	}
 	m.Width, m.Height, err = m.GetBounds()
+	if err != nil {
+		return err
+	}
 	m.CreationDate = m.GetDate()
 	m.GetMetadata()
 	
