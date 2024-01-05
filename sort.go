@@ -9,6 +9,12 @@ import (
 	"fmt"
 )
 
+func NewSort(filename string) *Sort {
+	sort := &Sort{dbFilename: filename}
+	sort.DbInit()
+	return sort
+}
+
 type Sort struct {
 	dbFilename string
 	db *sql.DB
@@ -16,48 +22,15 @@ type Sort struct {
 }
 
 type Sorter interface {
-	dbInit()
-	dbExec()
-	dbClose()
-	getDestination()
+	DbInit()
+	DbExec()
+	DbClose()
+	GetDestination()
+	GetSetting()
+	Scan()
 }
 
-func (s *Sort) getSetting(setting string) (string, error) {
-	var err error
-	var dst string
-	var stmt *sql.Stmt
-	stmt, err = s.db.Prepare("SELECT value FROM settings WHERE setting = ?")
-	if err != nil {
-		return "", err
-	}
-	defer stmt.Close()
-	stmt.QueryRow(setting).Scan(&dst)
-	return dst, nil
-}
-
-func (s *Sort) getDestination() (string, error) {
-	dst, err := s.getSetting("destination")
-	return dst, err
-}
-
-func (s *Sort) Close () (error) {
-	var err error
-	s.db.Close()
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (s *Sort) Exec(stmt string) error {
-	_, err := s.db.Exec(stmt)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (s *Sort) Init() (error) {
+func (s *Sort) DbInit() (error) {
 	var err error
 	s.db, err = sql.Open("sqlite3", s.dbFilename)
 	if err != nil {
@@ -71,7 +44,7 @@ func (s *Sort) Init() (error) {
 			value CHAR
 		)
 	`
-	err = s.Exec(stmt)
+	err = s.DbExec(stmt)
 	if err != nil {
 		return err
 	}
@@ -86,13 +59,13 @@ func (s *Sort) Init() (error) {
 			create_date TIMESTAMP
 		)
 	`
-	err = s.Exec(stmt)
+	err = s.DbExec(stmt)
 	if err != nil {
 		return err
 	}
 
 	var dst string
-	dst, err = s.getDestination()
+	dst, err = s.GetDestination()
 	if err != nil {
 		log.Fatal("Unable to get Destination.")
 	}
@@ -128,5 +101,44 @@ func (s *Sort) Init() (error) {
 	}
 	s.destdir = dst
 
+	return nil
+}
+
+func (s *Sort) DbExec(stmt string) error {
+	_, err := s.db.Exec(stmt)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Sort) DbClose() (error) {
+	var err error
+	s.db.Close()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Sort) GetDestination() (string, error) {
+	dst, err := s.GetSetting("destination")
+	return dst, err
+}
+
+func (s *Sort) GetSetting(setting string) (string, error) {
+	var err error
+	var dst string
+	var stmt *sql.Stmt
+	stmt, err = s.db.Prepare("SELECT value FROM settings WHERE setting = ?")
+	if err != nil {
+		return "", err
+	}
+	defer stmt.Close()
+	stmt.QueryRow(setting).Scan(&dst)
+	return dst, nil
+}
+
+func (s *Sort) Scan() error {
 	return nil
 }

@@ -32,12 +32,12 @@ func fileExists(filename string) bool {
 }
 
 func main() {
-	var s Sort = Sort {
-		dbFilename: "./gosort.db",
-	}
-	s.Init()
-	var m Media = Media {
-		filename_original: "/home/art/imagesort-py/images/samsung_phone/2023-08-25 20.17.19.jpg",
-	}
-	m.Init()
+	imageFile := "omelette.jpg"
+	image := NewMediaFile(imageFile)
+	
+	//image.GetMetadata()
+	image.Print()
+	os.Exit(0)
+	sort := NewSort("./gosort.db")
+	sort.Scan()
 }

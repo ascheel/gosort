@@ -1,67 +1,128 @@
 package main
 
 import (
-	"github.com/barasher/go-exiftool"
 	"time"
 	"fmt"
 	"os"
+	"github.com/kolesa-team/goexiv"
+	"log"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
+	_ "image/gif"
 )
 
 var TimeFormat string = "%Y:%m:%d %H:%M:%S"
 
 type Media struct {
-	filename_original string
-	filename_new string
-	sha256sum string
-	size int
-	create_date time.Time
+	Filename string
+	Sha256sum string
+	Size int64
+	ModifiedDate time.Time
+	CreationDate time.Time
+	Width int
+	Height int
+	Metadata map[string]string
 }
 
 type Mediaer interface {
 	Init()
 	GetNewFilename()
-	GetExif()
+	GetStatData()
+	GetMetadata()
+	GetBounds()
+	Print()
 }
 
-func (m *Media) GetNewFilename() (string, error) {
-	return "", nil
+func NewMediaFile(filename string) *Media {
+	mediaInstance := &Media{
+		Filename: filename,
+	}
+	mediaInstance.Init()
+	return mediaInstance
 }
 
-func (m *Media) Init () error {
-	var err error
-	// Set sha256sum
-	m.sha256sum, err = sha256sum(m.filename_original)
+func (m *Media) GetBounds () (int, int, error) {
+	reader, err := os.Open(m.Filename)
 	if err != nil {
-		fmt.Printf("Could not get checksum for file: %s\n", m.filename_original)
-		os.Exit(1)
+		return -1, -1, err
+	}
+	defer reader.Close()
+
+	img, _, err := image.Decode(reader)
+	if err != nil {
+		return -1, -1, err
 	}
 
-	fmt.Println(m.GetExif())
+	width  := img.Bounds().Dx()
+	height := img.Bounds().Dy()
+	return width, height, nil
+}
 
-	// Get date/time
+func (m *Media) Init() (error) {
+	fileInfo, err := os.Stat(m.Filename)
+	if err != nil {
+		return err
+	}
+
+	m.Size = fileInfo.Size()
+	m.ModifiedDate = fileInfo.ModTime()
+	m.Sha256sum, err = sha256sum(m.Filename)
+	if err != nil {
+		return err
+	}
+	m.Width, m.Height, err = m.GetBounds()
+	m.CreationDate = m.GetDate()
+	m.GetMetadata()
+	
 	return nil
 }
 
-func (m *Media) GetExif() map[string]string {
-	var metadata map[string]string
-	et, err := exiftool.NewExiftool()
+func (m *Media) Print() {
+	var w int = 0
+	for k := range m.Metadata {
+			if len(k) > w {
+					w = len(k)
+			}
+	}
+	for k, v := range m.Metadata {
+			fmt.Printf("%-*s: %s\n", w, k, v)
+	}
+}
+
+func (m *Media) GetDate() time.Time {
+	// First, attempt to get the date from EXIF data.
+	// If that doesn't work...
+	fields := []string{
+		"Exif.Photo.DateTimeDigitized",
+		"Exif.Photo.DateTimeOriginal",
+		"Exif.Image.DateTime",
+	}
+	for _, field := range fields {
+		theDate, ok := m.Metadata[field]
+		if ok {
+			theDate2, err := time.Parse(time.RFC3339, theDate)
+			if err != nil {
+				panic(err)
+			}
+			return theDate2
+		}
+	}
+	// No exif data?  Then return the Modified Date.
+	// Linux timestamps do not store creation time.
+	return m.ModifiedDate
+}
+
+func (m *Media) GetMetadata() {
+	img, err := goexiv.Open(m.Filename)
 	if err != nil {
-		fmt.Printf("Error initializing: %v\n", err)
-		os.Exit(1)
+		log.Fatal(err)
 	}
-	defer et.Close()
 
-	fileInfos := et.ExtractMetadata(m.filename_original)
-	for _, fileInfo := range fileInfos {
-		if fileInfo.Err != nil {
-			fmt.Printf("Error opening file %v: %v\n", fileInfo.File, fileInfo.Err)
-			continue
-		}
-
-		for k, v := range fileInfo.Fields {
-			fmt.Printf("[%v] %v\n", k, v)
-			metadata[k] = v.GetString()
-		}
+	err = img.ReadMetadata()
+	if err != nil {
+		log.Fatal(err)
 	}
-	return metadata
+
+	m.Metadata = img.GetExifData().AllTags()
 }
