@@ -23,4 +23,5 @@ func main() {
 	// os.Exit(0)
 	sort := NewSort("./gosort.db")
 	sort.Sort(scanDir)
+	sort.Report()
 }

@@ -4,6 +4,7 @@ import (
 	"time"
 	"fmt"
 	"os"
+	"github.com/barasher/go-exiftool"
 	"github.com/kolesa-team/goexiv"
 	"log"
 	"image"
@@ -17,6 +18,10 @@ import (
 	"crypto/md5"
 	"io"
 	"hash"
+	"strconv"
+	"reflect"
+	"sort"
+	"runtime"
 )
 
 var TimeFormat string = "%Y:%m:%d %H:%M:%S"
@@ -40,7 +45,11 @@ type Mediaer interface {
 	Init()
 	GetStatData()
 	GetMetadata()
+	GetImageMetdata()
+	GetFileMetadata()
+	GetVideoMetadata()
 	GetBounds()
+	GetDate()
 	Print()
 	IsImage()
 	IsVideo()
@@ -123,8 +132,20 @@ func (m *Media) GetBounds() (int, int, error) {
 	return width, height, nil
 }
 
+func lineno() string {
+	_, file, line, ok := runtime.Caller(1)
+	if !ok {
+		panic(ok)
+	}
+	return fmt.Sprintf("%s: %d", file, line)
+}
+
 func (m *Media) Init() (error) {
-	m.GetMetadata()
+	metadata, err := m.GetMetadata()
+	if err != nil {
+		return err
+	}
+	m.Metadata = metadata
 	fileInfo, err := os.Stat(m.Filename)
 	if err != nil {
 		return err
@@ -140,7 +161,8 @@ func (m *Media) Init() (error) {
 	}
 	m.Width, m.Height, err = m.GetBounds()
 	if err != nil {
-		return err
+		m.Width = -1
+		m.Height = -1
 	}
 	m.CreationDate = m.GetDate()
 	
@@ -148,24 +170,44 @@ func (m *Media) Init() (error) {
 }
 
 func (m *Media) Print() {
-	var w int = 0
-	for k := range m.Metadata {
-			if len(k) > w {
-					w = len(k)
-			}
+	width := 0
+	keys := make([]string, 0, len(m.Metadata))
+	for key := range m.Metadata {
+		keys = append(keys, key)
+		if len(key) > width {
+			width = len(key)
+		}
 	}
-	for k, v := range m.Metadata {
-			fmt.Printf("%-*s: %s\n", w, k, v)
+	sort.Strings(keys)
+	for _, key := range keys {
+		fmt.Printf("%-*s: %s\n", width, key, m.Metadata[key])
 	}
+	fmt.Printf("\n\n")
+	fmt.Printf("Creation Date: %v\n", m.CreationDate)
+	fmt.Printf("Size:          %d\n", m.Size)
+	fmt.Printf("Checksum:      %s\n", m.Checksum)
 }
 
 func (m *Media) GetDate() time.Time {
 	// First, attempt to get the date from EXIF data.
 	// If that doesn't work...
-	fields := []string{
-		"Exif.Photo.DateTimeDigitized",
-		"Exif.Photo.DateTimeOriginal",
-		"Exif.Image.DateTime",
+	var fields []string
+	if m.IsImage() {
+		fields = []string{
+			"Exif.Photo.DateTimeDigitized",
+			"Exif.Photo.DateTimeOriginal",
+			"Exif.Image.DateTime",
+		}
+	} else if m.IsVideo() {
+		// Currently supports .mp4 only
+		fields = []string{
+			"CreateDate",
+			"MediaCreateDate",
+			"TrackCreateDate",
+			"ModifyDate",
+			"MediaModifyDate",
+			"TrackModifyDate",
+		}
 	}
 	for _, field := range fields {
 		theDate, ok := m.Metadata[field]
@@ -184,7 +226,18 @@ func (m *Media) GetDate() time.Time {
 	return m.ModifiedDate
 }
 
-func (m *Media) GetMetadata() {
+func (m *Media) GetMetadata() (map[string]string, error) {
+	if m.IsImage() {
+		return m.GetImageMetadata()
+	} else if m.IsVideo() {
+		return m.GetVideoMetadata()
+	} else {
+		// Should probably handle this a little more gracefully.
+		panic("Unsupported file type.")
+	}
+}
+
+func (m *Media) GetImageMetadata() (map[string]string, error) {
 	img, err := goexiv.Open(m.Filename)
 	if err != nil {
 		log.Fatal(err)
@@ -195,10 +248,76 @@ func (m *Media) GetMetadata() {
 		log.Fatal(err)
 	}
 
-	m.Metadata = img.GetExifData().AllTags()
+	return img.GetExifData().AllTags(), nil
 }
 
-func checksum(filename string) (string, error) {
+func (m *Media) GetFileMetadata() (map[string]string, error) {
+	metadata := make(map[string]string)
+	fileInfo, err := os.Stat(m.Filename)
+	if err != nil {
+		return make(map[string]string), nil
+	}
+	metadata["File.Size"]           = strconv.FormatInt(fileInfo.Size(), 10)
+	metadata["File.ModifiedDate"]   = fileInfo.ModTime().Format("2006-01-02 16.04.05")
+	metadata["File.MD5Sum"], err    = checksum(m.Filename, "md5")
+	if err != nil {
+		return make(map[string]string), err
+	}
+	metadata["File.Sha256sum"], err = checksum(m.Filename, "sha256")
+	if err != nil {
+		return make(map[string]string), err
+	}
+	return metadata, nil
+}
+
+func (m *Media) GetVideoMetadata() (map[string]string, error) {
+	et, err := exiftool.NewExiftool()
+	if err != nil {
+		panic(err)
+	}
+	defer et.Close()
+
+	metadata := make(map[string]string)
+
+	fileInfos := et.ExtractMetadata(m.Filename)
+	for _, fileInfo := range fileInfos {
+		if fileInfo.Err != nil {
+			fmt.Printf("Error concerning %v: %v\n", fileInfo.File, fileInfo.Err)
+			continue
+		}
+		for key, value := range fileInfo.Fields {
+			// metadata[k] = v
+			// fmt.Printf("[%v] %v\n", k, v)
+			switch v := value.(type) {
+			case string:
+				metadata[key] = v
+			case int:
+				metadata[key] = strconv.Itoa(v)
+			case float64:
+				metadata[key] = strconv.FormatFloat(v, 'f', -1, 64)
+			case bool:
+				metadata[key] = strconv.FormatBool(v)
+			default:
+				metadata[key] = fmt.Sprintf("<Unsupported field of type %s>", reflect.TypeOf(v))
+			}
+		}
+	}
+
+	return metadata, nil
+}
+
+func checksum(filename string, checksumFormat ...string) (string, error) {
+	// Check arguments
+	var cf string
+	if len(checksumFormat) == 0 {
+		cf = "md5"
+	} else if len(checksumFormat) == 1 {
+		cf = checksumFormat[0]
+	} else {
+		panic("Too many formats supplied.")
+	}
+
+	// Open file
 	f, err := os.Open(filename)
 	if err != nil {
 		return "", err
@@ -210,8 +329,7 @@ func checksum(filename string) (string, error) {
 		"sha256": sha256.New,
 		"md5":    md5.New,
 	}
-	checksumFormat := "sha256"
-	h := ChecksumFunctions[checksumFormat]()
+	h := ChecksumFunctions[cf]()
 
 	// Get the file's checksum
 	_, err = io.Copy(h, f)

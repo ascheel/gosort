@@ -13,6 +13,8 @@ import (
 	"crypto/sha256"
 	"crypto/md5"
 	"hash"
+    "golang.org/x/text/language"
+    "golang.org/x/text/message"
 )
 
 func FileOrDirExists(path string) bool {
@@ -26,6 +28,14 @@ func FileOrDirExists(path string) bool {
 func NewSort(filename string) *Sort {
 	sort := &Sort{dbFilename: filename}
 	sort.DbInit()
+	sort.count = make(map[string]uint64)
+	sort.count["error"] = 0
+	sort.count["image"] = 0
+	sort.count["video"] = 0
+	sort.count["exists"] = 0
+	sort.count["unknown"] = 0
+	sort.count["directories"] = 0
+	sort.count["total"] = 0
 	return sort
 }
 
@@ -33,6 +43,7 @@ type Sort struct {
 	dbFilename string
 	db *sql.DB
 	destdir string
+	count map[string]uint64
 }
 
 type Sorter interface {
@@ -68,8 +79,7 @@ func (s *Sort) DbInit() (error) {
 	stmt = `
 	CREATE TABLE IF NOT EXISTS
 		media (
-			filename_original CHAR,
-			filename_new CHAR UNIQUE,
+			filename CHAR,
 			checksum CHAR UNIQUE,
 			size INT,
 			create_date TIMESTAMP
@@ -156,20 +166,19 @@ func (s *Sort) GetSetting(setting string) (string, error) {
 	return dst, nil
 }
 
-func (s *Sort) AddImageToDB(m *media.Media) error {
+func (s *Sort) AddFileToDB(m *media.Media) error {
 	stmt := `
 	INSERT INTO
 		media (
-			filename_original,
-			filename_new,
+			filename,
 			checksum,
 			size,
 			create_date
-		) VALUES (?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?)
 	`
 	// fmt.Println(stmt)
 	// fmt.Printf("%s - %s - %s - %d", m.Filename, m.FilenameNew, m.Sha256sum, m.Size)
-	_, err := s.db.Exec(stmt, m.Filename, m.FilenameNew, m.Checksum, m.Size, m.CreationDate)
+	_, err := s.db.Exec(stmt, m.FilenameNew, m.Checksum, m.Size, m.CreationDate)
 	if err != nil {
 		return err
 	}
@@ -191,6 +200,7 @@ func (s *Sort) FileIsInDB(m *media.Media) (bool) {
 }
 
 func (s *Sort) GetNewFilename(m *media.Media) (string) {
+	// fmt.Printf("  Getting new filename: %s\n", m.Filename)
 	dst, err := s.GetDestination()
 	if err != nil {
 		return ""
@@ -202,14 +212,16 @@ func (s *Sort) GetNewFilename(m *media.Media) (string) {
 	TimeFormat := "2006-01-02 15.04.05"
 	num := 0
 	dirname := filepath.Join(dst, m.CreationDate.Format(TimeDirFormat))
+	// fmt.Printf("    Dirname: %s\n", dirname)
 	for {
+		// fmt.Printf("      Creation date: %v\n", m.CreationDate)
 		shortname := m.CreationDate.Format(TimeFormat)
 		if num > 0 {
 			shortname = fmt.Sprintf("%s.%d", shortname, num)
 		}
 		shortname = fmt.Sprintf("%s.%s", shortname, m.Ext())
 		filename := filepath.Join(dirname, shortname)
-		fmt.Printf("Checking filename: %s\n", filename)
+
 		if FileOrDirExists(filename) {
 			sum, err := checksum(filename)
 			if err != nil {
@@ -227,52 +239,54 @@ func (s *Sort) GetNewFilename(m *media.Media) (string) {
 }
 
 func (s *Sort) ProcessFile(m *media.Media) (string, error) {
-	fmt.Printf("  Processing file %s\n", m.Filename)
+	//m.Print()
+	p := message.NewPrinter(language.AmericanEnglish)
+	p.Printf("%10d: %s\n", s.count["total"], m.Filename)
+	if ! m.IsRecognized() {
+		s.count["unknown"] += 1
+		return "", errors.New("is not a picture or video")
+	}
+
 	if s.FileIsInDB(m) {
-		fmt.Printf("  File is already in database. Returning. (%s)\n", m.Checksum)
+		s.count["exists"] += 1
+		fmt.Printf("  Exists. (%s)\n", m.Filename)
 		return "", nil
 	}
-	if m.IsImage() {
-		// fmt.Printf("  File is an image.\n")
-		m.FilenameNew = s.GetNewFilename(m)
-		err := s.AddImageToDB(m)
-		if err != nil {
-			fmt.Printf("    Unable to insert into database.\n")
-			fmt.Println(err)
-			return "", err
-		}
-		fmt.Printf("    New filename: %s\n", m.FilenameNew)
-		dirname := filepath.Dir(m.FilenameNew)
-		if ! FileOrDirExists(dirname) {
-			fmt.Printf("    Creating dir: %s\n", dirname)
-			os.MkdirAll(dirname, 0755)
-		}
-		fmt.Printf("    Copying file: %s -> %s\n", m.Filename, m.FilenameNew)
-		copyFile(m.Filename, m.FilenameNew)
-		// Now copy the modification time
-		err = os.Chtimes(m.FilenameNew, m.ModifiedDate, m.ModifiedDate)
-		if err != nil {
-			panic(err)
-		}
-		return m.FilenameNew, nil
-	} else if m.IsVideo() {
-		fmt.Printf("  File is a video.  Not yet supported.\n")
-		return "", errors.New("video not yet supported")
-	} else {
-		return "", errors.New("is not picture or video")
+	m.FilenameNew = s.GetNewFilename(m)
+	err := s.AddFileToDB(m)
+	if err != nil {
+		s.count["error"] += 1
+		fmt.Printf("    Unable to insert into database.\n")
+		fmt.Println(err)
+		return "", err
 	}
+	dirname := filepath.Dir(m.FilenameNew)
+	if ! FileOrDirExists(dirname) {
+		os.MkdirAll(dirname, 0755)
+	}
+	err = copyFile(m.Filename, m.FilenameNew)
+	if err != nil {
+		s.count["error"] += 1
+		return "", err
+	}
+	err = os.Chtimes(m.FilenameNew, m.ModifiedDate, m.ModifiedDate)
+	if err != nil {
+		s.count["error"] += 1
+		return "", err
+	}
+	return m.FilenameNew, nil
 }
 
 func copyFile(src string, dst string) error {
 	srcFile, err := os.Open(src)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	defer srcFile.Close()
 
 	dstFile, err := os.Create(dst)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	defer dstFile.Close()
 
@@ -283,9 +297,11 @@ func copyFile(src string, dst string) error {
 func (s *Sort) visit(path string, info os.FileInfo, err error) error {
 	if err != nil {
 		fmt.Println(err)
+		s.count["error"] += 1
 		return nil
 	}
 	if ! info.IsDir() {
+		s.count["total"] += 1
 		absPath, err := filepath.Abs(path)
 		if err != nil {
 			panic(err)
@@ -293,6 +309,8 @@ func (s *Sort) visit(path string, info os.FileInfo, err error) error {
 		mediaFile := media.NewMediaFile(absPath)
 		s.ProcessFile(mediaFile)
 		//fmt.Printf("%s is a file.  Abs: %s\n", path, absPath)
+	} else {
+		s.count["directories"] += 1
 	}
 	return nil
 }
@@ -304,6 +322,12 @@ func (s *Sort) Sort(root string) error {
 		fmt.Printf("Error walking path %v: %v\n", root, err)
 	}
 	return nil
+}
+
+func (s *Sort) Report() {
+	for k, v := range s.count {
+		fmt.Printf("%15s: %d\n", k, v)
+	}
 }
 
 func checksum(filename string) (string, error) {
