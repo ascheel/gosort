@@ -10,6 +10,9 @@ import (
 	"errors"
 	"io"
 	"github.com/ascheel/gosort/media"
+	"crypto/sha256"
+	"crypto/md5"
+	"hash"
 )
 
 func FileOrDirExists(path string) bool {
@@ -153,7 +156,7 @@ func (s *Sort) GetSetting(setting string) (string, error) {
 	return dst, nil
 }
 
-func (s *Sort) AddImageToDB(m *Media) error {
+func (s *Sort) AddImageToDB(m *media.Media) error {
 	stmt := `
 	INSERT INTO
 		media (
@@ -174,7 +177,7 @@ func (s *Sort) AddImageToDB(m *Media) error {
 	return nil
 }
 
-func (s *Sort) FileIsInDB(m *Media) (bool) {
+func (s *Sort) FileIsInDB(m *media.Media) (bool) {
 	var err error
 	var result uint8
 	var stmt *sql.Stmt
@@ -187,7 +190,7 @@ func (s *Sort) FileIsInDB(m *Media) (bool) {
 	return result > 0
 }
 
-func (s *Sort) GetNewFilename(m *Media) (string) {
+func (s *Sort) GetNewFilename(m *media.Media) (string) {
 	dst, err := s.GetDestination()
 	if err != nil {
 		return ""
@@ -223,14 +226,14 @@ func (s *Sort) GetNewFilename(m *Media) (string) {
 	}
 }
 
-func (s *Sort) ProcessFile(m *Media) (string, error) {
-	fmt.Printf("Processing file %s\n", m.Filename)
+func (s *Sort) ProcessFile(m *media.Media) (string, error) {
+	fmt.Printf("  Processing file %s\n", m.Filename)
 	if s.FileIsInDB(m) {
 		fmt.Printf("  File is already in database. Returning. (%s)\n", m.Checksum)
 		return "", nil
 	}
 	if m.IsImage() {
-		fmt.Printf("  File is an image.\n")
+		// fmt.Printf("  File is an image.\n")
 		m.FilenameNew = s.GetNewFilename(m)
 		err := s.AddImageToDB(m)
 		if err != nil {
@@ -238,13 +241,13 @@ func (s *Sort) ProcessFile(m *Media) (string, error) {
 			fmt.Println(err)
 			return "", err
 		}
-		fmt.Printf("  New filename: %s\n", m.FilenameNew)
+		fmt.Printf("    New filename: %s\n", m.FilenameNew)
 		dirname := filepath.Dir(m.FilenameNew)
 		if ! FileOrDirExists(dirname) {
 			fmt.Printf("    Creating dir: %s\n", dirname)
 			os.MkdirAll(dirname, 0755)
 		}
-		fmt.Printf("Copying file: %s -> %s\n", m.Filename, m.FilenameNew)
+		fmt.Printf("    Copying file: %s -> %s\n", m.Filename, m.FilenameNew)
 		copyFile(m.Filename, m.FilenameNew)
 		// Now copy the modification time
 		err = os.Chtimes(m.FilenameNew, m.ModifiedDate, m.ModifiedDate)
@@ -287,7 +290,7 @@ func (s *Sort) visit(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			panic(err)
 		}
-		mediaFile := NewMediaFile(absPath)
+		mediaFile := media.NewMediaFile(absPath)
 		s.ProcessFile(mediaFile)
 		//fmt.Printf("%s is a file.  Abs: %s\n", path, absPath)
 	}
@@ -302,3 +305,27 @@ func (s *Sort) Sort(root string) error {
 	}
 	return nil
 }
+
+func checksum(filename string) (string, error) {
+	f, err := os.Open(filename)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	// Set the checksum function
+	ChecksumFunctions := map[string]func() hash.Hash {
+		"sha256": sha256.New,
+		"md5":    md5.New,
+	}
+	checksumFormat := "sha256"
+	h := ChecksumFunctions[checksumFormat]()
+
+	// Get the file's checksum
+	_, err = io.Copy(h, f)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", h.Sum(nil)), nil
+}
+

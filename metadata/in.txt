@@ -1,0 +1,10 @@
+;FFMETADATA1
+major_brand=mp42
+minor_version=0
+compatible_brands=isommp42
+creation_time=2023-11-20T20:16:33.000000Z
+location=+40.3816-111.9158/
+location-eng=+40.3816-111.9158/
+com.android.version=13
+com.android.capture.fps=60.000000
+encoder=Lavf58.76.100
