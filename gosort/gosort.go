@@ -6,6 +6,7 @@ import (
 
 var (
 	scanDir string
+	Version string
 )
 
 func init() {

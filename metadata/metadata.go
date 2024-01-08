@@ -17,6 +17,10 @@ import (
 	"github.com/kolesa-team/goexiv"
 )
 
+var (
+	Version string
+)
+
 func FileExtMatches(filename string, exts []string) bool {
 	fileExt := filepath.Ext(filename)
 	if len(fileExt) < 2 {

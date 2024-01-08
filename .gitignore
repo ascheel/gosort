@@ -22,3 +22,6 @@ go.work
 
 # SQLite3 database files
 *.db
+
+# bin directory where compiled stuff lives.
+bin
