@@ -25,3 +25,7 @@ go.work
 
 # bin directory where compiled stuff lives.
 bin
+
+# Go profiling results
+*.prof
+
