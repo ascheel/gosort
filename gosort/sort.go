@@ -28,14 +28,12 @@ func FileOrDirExists(path string) bool {
 func NewSort(filename string) *Sort {
 	sort := &Sort{dbFilename: filename}
 	sort.DbInit()
-	sort.count = make(map[string]uint64)
-	sort.count["error"] = 0
-	sort.count["image"] = 0
-	sort.count["video"] = 0
-	sort.count["exists"] = 0
-	sort.count["unknown"] = 0
-	sort.count["directories"] = 0
-	sort.count["total"] = 0
+	sort.report = make(map[string][]string)
+	sort.report["image"] = make([]string, 0)
+	sort.report["video"] = make([]string, 0)
+	sort.report["duplicate"] = make([]string, 0)
+	sort.report["unsorted"] = make([]string, 0)
+	sort.count = 0
 	return sort
 }
 
@@ -43,7 +41,8 @@ type Sort struct {
 	dbFilename string
 	db *sql.DB
 	destdir string
-	count map[string]uint64
+	report map[string][]string
+	count uint64
 }
 
 type Sorter interface {
@@ -241,21 +240,27 @@ func (s *Sort) GetNewFilename(m *media.Media) (string) {
 func (s *Sort) ProcessFile(m *media.Media) (string, error) {
 	//m.Print()
 	p := message.NewPrinter(language.AmericanEnglish)
-	p.Printf("%10d: %s\n", s.count["total"], m.Filename)
+	s.count += 1
+	p.Printf("%10d: %s\n", s.count, m.Filename)
 	if ! m.IsRecognized() {
-		s.count["unknown"] += 1
+		s.report["unsorted"] = append(s.report["unsorted"], m.Filename)
 		return "", errors.New("is not a picture or video")
+	} else if m.IsImage() {
+		s.report["image"] = append(s.report["image"], m.Filename)
+	} else if m.IsVideo() {
+		s.report["video"] = append(s.report["video"], m.Filename)
+	} else {
+		panic("You shouldn't hit this.")
 	}
 
 	if s.FileIsInDB(m) {
-		s.count["exists"] += 1
+		s.report["duplicate"] = append(s.report["duplicate"], m.Filename)
 		fmt.Printf("  Exists. (%s)\n", m.Filename)
 		return "", nil
 	}
 	m.FilenameNew = s.GetNewFilename(m)
 	err := s.AddFileToDB(m)
 	if err != nil {
-		s.count["error"] += 1
 		fmt.Printf("    Unable to insert into database.\n")
 		fmt.Println(err)
 		return "", err
@@ -266,12 +271,10 @@ func (s *Sort) ProcessFile(m *media.Media) (string, error) {
 	}
 	err = copyFile(m.Filename, m.FilenameNew)
 	if err != nil {
-		s.count["error"] += 1
 		return "", err
 	}
 	err = os.Chtimes(m.FilenameNew, m.ModifiedDate, m.ModifiedDate)
 	if err != nil {
-		s.count["error"] += 1
 		return "", err
 	}
 	return m.FilenameNew, nil
@@ -297,11 +300,9 @@ func copyFile(src string, dst string) error {
 func (s *Sort) visit(path string, info os.FileInfo, err error) error {
 	if err != nil {
 		fmt.Println(err)
-		s.count["error"] += 1
 		return nil
 	}
 	if ! info.IsDir() {
-		s.count["total"] += 1
 		absPath, err := filepath.Abs(path)
 		if err != nil {
 			panic(err)
@@ -309,8 +310,6 @@ func (s *Sort) visit(path string, info os.FileInfo, err error) error {
 		mediaFile := media.NewMediaFile(absPath)
 		s.ProcessFile(mediaFile)
 		//fmt.Printf("%s is a file.  Abs: %s\n", path, absPath)
-	} else {
-		s.count["directories"] += 1
 	}
 	return nil
 }
@@ -325,8 +324,13 @@ func (s *Sort) Sort(root string) error {
 }
 
 func (s *Sort) Report() {
-	for k, v := range s.count {
-		fmt.Printf("%15s: %d\n", k, v)
+	for k, v := range s.report {
+		fmt.Printf("\n%s:\n", k)
+		var count uint64 = 0
+		for _, item := range v {
+			count += 1
+			fmt.Printf("%10d: %s\n", count, item)
+		}
 	}
 }
 
