@@ -116,6 +116,9 @@ func (m *Media) IsRecognized() (bool) {
 }
 
 func (m *Media) GetBounds() (int, int, error) {
+	// Note that this is a disgusting drain on CPU resources
+	//   because it has to decode the entire JPG file.  And
+	//   WE'RE NOT EVEN USING THE WIDTH x HEIGHT!
 	reader, err := os.Open(m.Filename)
 	if err != nil {
 		return -1, -1, err
@@ -159,7 +162,7 @@ func (m *Media) Init() (error) {
 	if err != nil {
 		return err
 	}
-	m.Width, m.Height, err = m.GetBounds()
+	// m.Width, m.Height, err = m.GetBounds()
 	if err != nil {
 		m.Width = -1
 		m.Height = -1
