@@ -3,7 +3,7 @@ package main
 import (
 	"net/http"
 	"github.com/gin-gonic/gin"
-	"internal/media"
+	"github.com/ascheel/gosort/internal/media"
 	//"github.com/ascheel/gosort/internal/mediadb"
 )
 

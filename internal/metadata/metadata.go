@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"github.com/ascheel/gosort/internal/media"
+	"internal/media"
 )
 
 var (
