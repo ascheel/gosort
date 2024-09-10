@@ -1,0 +1,5 @@
+server:
+  savedir: '%HOME%/pictures'
+  port: 8080
+client:
+  host: http://localhost:8080
