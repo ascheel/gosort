@@ -45,17 +45,6 @@ func InitGoSort() *GoSort {
 	return gs
 }
 
-// type Media struct {
-// 	Filename     string            `yaml:"filename"      json:"filename"`
-// 	Path         string            `yaml:"path"          json:"path"`
-// 	Checksum     string            `yaml:"checksum"      json:"checksum"`
-// 	Checksum100k string            `yaml:"checksum100k"  json:"checksum100k"`
-// 	Size         int64             `yaml:"size"          json:"size"`
-// 	ModifiedDate time.Time         `yaml:"modified_time" json:"modified_time"`
-// 	CreationDate time.Time         `yaml:"creation_time" json:"creation_time"`
-// 	Metadata     map[string]string `yaml:"metadata"      json:"metadata"`
-// }
-
 type Status struct {
 	Status string	`json:"status"`
 }
@@ -81,7 +70,7 @@ func pushFile(c *gin.Context) {
 
 	file := c.PostForm("media")
 	media := sortengine.MediaFromJSON(file)
-	engine := sortengine.NewEngine("gosort.db")
+	engine := sortengine.NewEngine()
 
 	// Check if checksum exists
 	if engine.DB.ChecksumExists(media.Checksum) {
@@ -109,7 +98,7 @@ func pushFile(c *gin.Context) {
 }
 
 func checksumExists(checksum string) bool {
-	engine := sortengine.NewEngine("gosort.db")
+	engine := sortengine.NewEngine()
 	// db := NewDB("./gosort.db")	// Clean this up to make it secure if necessary
 	return engine.DB.ChecksumExists(checksum)
 }
@@ -123,16 +112,13 @@ func checkFile(c *gin.Context) {
 }
 
 func checkChecksums(c *gin.Context) {
-	status := "not found"
-	checksums := make([]string, 0)
-	engine := sortengine.NewEngine("gosort.db")
-	for _, checksum := range c.PostFormArray("checksumList") {
-		if ! engine.DB.ChecksumExists(checksum) {
-			checksums = append(checksums, checksum)
-		}
+	checksums := make(map[string]bool)
+	engine := sortengine.NewEngine()
+	for _, md5sum := range c.PostFormArray("checksumList") {
+		checksums[md5sum] = engine.DB.ChecksumExists(md5sum)
 	}
 	//c.IndentedJSON(http.StatusOK, Status{Status: status})
-	c.JSON(http.StatusOK, gin.H{"status": status, "checksums": checksums})
+	c.JSON(http.StatusOK, gin.H{"checksums": checksums})
 }
 
 func printVersion() {

@@ -1,5 +1,6 @@
 server:
+  database_file: gosort.db
   savedir: '%HOME%/pictures'
   port: 8080
 client:
-  host: http://localhost:8080
+  host: localhost:8080

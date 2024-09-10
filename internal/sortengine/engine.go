@@ -25,21 +25,22 @@ func FileOrDirExists(path string) bool {
 	}
 }
 
-func NewEngine(filename string) *Engine {
-	engine := &Engine{dbFilename: filename}
+func NewEngine() *Engine {
+	engine := &Engine{}
 	var err error
 	engine.config, err = LoadConfig()
 	if err != nil {
 		log.Fatalf("Unable to load config: %v", err)
 	}
 	//engine.DbInit()
-	engine.DB = NewDB(filename, engine.config)
-	engine.report = make(map[string][]string)
-	engine.report["image"] = make([]string, 0)
-	engine.report["video"] = make([]string, 0)
+	engine.dbFilename          = engine.config.Server.DBFile
+	engine.DB                  = NewDB(engine.dbFilename, engine.config)
+	engine.report              = make(map[string][]string)
+	engine.report["image"]     = make([]string, 0)
+	engine.report["video"]     = make([]string, 0)
 	engine.report["duplicate"] = make([]string, 0)
-	engine.report["unsorted"] = make([]string, 0)
-	engine.count = 0
+	engine.report["unsorted"]  = make([]string, 0)
+	engine.count               = 0
 	return engine
 }
 

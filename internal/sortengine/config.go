@@ -14,6 +14,7 @@ type Config struct {
 }
 
 type ServerConfig struct {
+	DBFile  string `yaml:"database_file"`
 	SaveDir string `yaml:"savedir"`
 	Port    int    `yaml:"port"`
 }
