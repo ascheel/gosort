@@ -6,8 +6,6 @@ require (
 	github.com/barasher/go-exiftool v1.10.0
 	github.com/gin-gonic/gin v1.10.0
 	github.com/kolesa-team/goexiv v1.2.0
-	github.com/mattn/go-sqlite3 v1.14.22
-	golang.org/x/text v0.15.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.31.1
 )
@@ -41,6 +39,7 @@ require (
 	golang.org/x/crypto v0.23.0 // indirect
 	golang.org/x/net v0.25.0 // indirect
 	golang.org/x/sys v0.22.0 // indirect
+	golang.org/x/text v0.15.0 // indirect
 	google.golang.org/protobuf v1.34.1 // indirect
 	modernc.org/gc/v3 v3.0.0-20240107210532-573471604cb6 // indirect
 	modernc.org/libc v1.55.3 // indirect

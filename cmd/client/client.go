@@ -10,8 +10,12 @@ import (
 	"os"
 	"path/filepath"
 
-	m "github.com/ascheel/gosort/internal/media"
+	m "github.com/ascheel/gosort/internal/sortengine"
 	//"github.com/veandco/go-sdl2/img"
+)
+
+var (
+	Version string
 )
 
 type Send struct {
@@ -76,7 +80,12 @@ func checksum100k(filename string) (string, error) {
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }
 
+func printVersion() {
+	fmt.Printf("GoSort Client Version: %s\n", Version)
+}
+
 func main() {
+	printVersion()
 	if len(os.Args) < 2 {
 		fmt.Println("Usage: send <directory>")
 		os.Exit(1)

@@ -13,12 +13,15 @@ import (
 type DB struct {
 	// SQLite3 database
 	filename string
+	config *Config
 	db *sql.DB
 	destdir string
 }
 
-func NewDB(filename string) *DB {
-	db := &DB{filename: filename}
+func NewDB(filename string, config *Config) *DB {
+	db := &DB{}
+	db.filename = filename
+	db.config = config
 	db.Init()
 	return db
 }
@@ -52,43 +55,6 @@ func (d *DB) DbExec(stmt string) error {
 	return nil
 }
 
-func (d *DB) GetNewFilename(media *Media) string {
-	dst, err := d.GetDestination()
-	if err != nil {
-		return ""
-	}
-	TimeDirFormat := "2006-01"
-	TimeFormat := "2006-01-02 15.04.05"
-	num := 0
-	dirname := filepath.Join(dst, media.CreationDate.Format(TimeDirFormat))
-	for {
-		shortname := media.CreationDate.Format(TimeFormat)
-		if num > 0 {
-			shortname = fmt.Sprintf("%s-%d", shortname, num)
-		}
-		shortname = fmt.Sprintf("%s.%s", shortname, media.Ext())
-		filename := filepath.Join(dirname, shortname)
-
-		if FileOrDirExists(filename) {
-			num++
-			continue
-		} else {
-			return filename
-		}
-	}
-}
-
-func (d *DB) GetSetting(setting string) (string, error) {
-	var err error
-	var value string
-	stmt := `SELECT value FROM settings WHERE setting = ?`
-	err = d.db.QueryRow(stmt, setting).Scan(&value)
-	if err != nil {
-		return "", err
-	}
-	return value, nil
-}
-
 func (d *DB) MediaInDB(media *Media) (bool) {
 	return d.ChecksumExists(media.Checksum)
 }
@@ -106,10 +72,6 @@ func (d *DB) ChecksumExists(checksum string) (bool) {
 	} else {
 		return true
 	}
-}
-
-func (d *DB) GetDestination() (string, error) {
-	return d.GetSetting("destination")
 }
 
 func (d *DB)Init() error {
@@ -146,11 +108,8 @@ func (d *DB)Init() error {
 		return err
 	}
 
-	var dst string
-	dst, err = d.GetDestination()
-	if err != nil {
-		log.Fatal("Unable to get Destination.")
-	}
+	dst := d.config.Server.SaveDir
+
 	if len(dst) == 0 {
 		// Destination does not exist.
 		homedir, err := os.UserHomeDir()

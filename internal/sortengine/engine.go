@@ -1,8 +1,8 @@
 package sortengine
 
 import (
-	"database/sql"
-	_ "github.com/mattn/go-sqlite3"
+	// "database/sql"
+	// _ "github.com/mattn/go-sqlite3"
 	"log"
 	"os"
 	"path/filepath"
@@ -32,7 +32,8 @@ func NewEngine(filename string) *Engine {
 	if err != nil {
 		log.Fatalf("Unable to load config: %v", err)
 	}
-	engine.DbInit()
+	//engine.DbInit()
+	engine.DB = NewDB(filename, engine.config)
 	engine.report = make(map[string][]string)
 	engine.report["image"] = make([]string, 0)
 	engine.report["video"] = make([]string, 0)
@@ -44,135 +45,10 @@ func NewEngine(filename string) *Engine {
 
 type Engine struct {
 	dbFilename string
-	db *sql.DB
-	destdir string
+	DB *DB
 	report map[string][]string
 	count uint64
 	config *Config
-}
-
-func (e *Engine) DbInit() (error) {
-	var err error
-	e.db, err = sql.Open("sqlite3", e.dbFilename)
-	if err != nil {
-		return err
-	}
-
-	stmt := `
-	CREATE TABLE IF NOT EXISTS
-		settings (
-			setting CHAR UNIQUE,
-			value CHAR
-		)
-	`
-	err = e.DbExec(stmt)
-	if err != nil {
-		return err
-	}
-
-	stmt = `
-	CREATE TABLE IF NOT EXISTS
-		media (
-			filename CHAR,
-			checksum CHAR UNIQUE,
-			checksum100k CHAR,
-			size INT,
-			create_date TIMESTAMP
-		)
-	`
-	err = e.DbExec(stmt)
-	if err != nil {
-		return err
-	}
-
-	dst := e.config.Server.SaveDir
-	if err != nil {
-		log.Fatal("Unable to get Destination.")
-	}
-	if len(dst) == 0 {
-		// Destination does not exist.
-		homedir, err := os.UserHomeDir()
-		defaultDir := filepath.Join(homedir, "pictures")
-		if err != nil {
-			log.Fatalln("Cannot get home dir.")
-		}
-		fmt.Printf("Directory to store images [%s]: ", defaultDir)
-		fmt.Scanln(&dst)
-		if len(dst) == 0 {
-			dst = defaultDir
-		}
-		//stmt = `INSERT INTO settings (setting, value) VALUES (?, ?)`
-		tx, err := e.db.Begin()
-		if err != nil {
-			log.Fatalln("Cannot insert.")
-		}
-		stmt, err := tx.Prepare("INSERT INTO settings (setting, value) VALUES (?, ?)")
-		if err != nil {
-			log.Fatalln("Cannot insert (2).")
-		}
-		_, err = stmt.Exec("destination", dst)
-		if err != nil {
-			log.Fatalln("Failed to insert.")
-		}
-		err = tx.Commit()
-		if err != nil {
-			log.Fatalln("Unable to commit destination directory.")
-		}
-	}
-	e.destdir = dst
-
-	return nil
-}
-
-func (e *Engine) DbExec(stmt string) error {
-	_, err := e.db.Exec(stmt)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (e *Engine) DbClose() (error) {
-	var err error
-	e.db.Close()
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (e *Engine) GetSetting(setting string) (string, error) {
-	var err error
-	var dst string
-	var stmt *sql.Stmt
-	stmt, err = e.db.Prepare("SELECT value FROM settings WHERE setting = ?")
-	if err != nil {
-		return "", err
-	}
-	defer stmt.Close()
-	stmt.QueryRow(setting).Scan(&dst)
-	return dst, nil
-}
-
-func (e *Engine) AddFileToDB(m *Media) error {
-	stmt := `
-	INSERT INTO
-		media (
-			filename,
-			checksum,
-			checksum100k,
-			size,
-			create_date
-		) VALUES (?, ?, ?, ?, ?)
-	`
-	// fmt.Println(stmt)
-	// fmt.Printf("%s - %s - %s - %d", m.Filename, m.FilenameNew, m.Sha256sum, m.Size)
-	m.SetChecksum()
-	_, err := e.db.Exec(stmt, m.Filename, m.Checksum, m.Checksum100k, m.Size, m.CreationDate)
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 // func (e *Engine) GetChecksum(checksum string) (bool) {
@@ -190,41 +66,6 @@ func (e *Engine) AddFileToDB(m *Media) error {
 // 		return true
 // 	}
 // }
-
-func (e *Engine) FileIsInDB(m *Media) (bool) {
-	var err error
-	var stmt *sql.Stmt
-	stmt, err = e.db.Prepare("SELECT checksum FROM media WHERE checksum100k = ? ")
-	if err != nil {
-		return false
-	}
-	defer stmt.Close()
-
-	rows, err := stmt.Query(m.Checksum100k)
-	if err != nil {
-		panic(err)
-	}
-	defer rows.Close()
-
-	// Iterate
-	for rows.Next() {
-		var checksum string
-		err := rows.Scan(&checksum)
-		if err != nil {
-			panic(err)
-		}
-		m.SetChecksum()
-
-		// We have at least one...  so lets check the checksum.
-		if checksum == m.Checksum {
-			return true
-		}
-	}
-	if err := rows.Err(); err != nil {
-		panic(err)
-	}
-	return false
-}
 
 func (e *Engine) GetNewFilename(m *Media) (string) {
 	// fmt.Printf("  Getting new filename: %s\n",

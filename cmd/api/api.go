@@ -22,10 +22,11 @@ import (
 	//"time"
 
 	"github.com/ascheel/gosort/internal/sortengine"
-	// m "github.com/ascheel/gosort/internal/media"
-	// "github.com/ascheel/gosort/internal/config"
-	//"github.com/ascheel/gosort/internal/mediadb"
 	"github.com/gin-gonic/gin"
+)
+
+var (
+	Version string
 )
 
 type GoSort struct  {
@@ -80,15 +81,15 @@ func pushFile(c *gin.Context) {
 
 	file := c.PostForm("media")
 	media := sortengine.MediaFromJSON(file)
-	db := NewDB("./gosort.db")
+	engine := sortengine.NewEngine("gosort.db")
 
 	// Check if checksum exists
-	if db.ChecksumExists(media.Checksum) {
+	if engine.DB.ChecksumExists(media.Checksum) {
 		c.JSON(409, gin.H{"status": "exists"})
 		return
 	}
 
-	newFilename := db.GetNewFilename(media)
+	newFilename := engine.GetNewFilename(media)
 
 	shortFilename := filepath.Base(data.Filename)
 	fmt.Printf("Uploaded file: %s\n", shortFilename)
@@ -108,8 +109,9 @@ func pushFile(c *gin.Context) {
 }
 
 func checksumExists(checksum string) bool {
-	db := NewDB("./gosort.db")	// Clean this up to make it secure if necessary
-	return db.ChecksumExists(checksum)
+	engine := sortengine.NewEngine("gosort.db")
+	// db := NewDB("./gosort.db")	// Clean this up to make it secure if necessary
+	return engine.DB.ChecksumExists(checksum)
 }
 
 func checkFile(c *gin.Context) {
@@ -123,9 +125,9 @@ func checkFile(c *gin.Context) {
 func checkChecksums(c *gin.Context) {
 	status := "not found"
 	checksums := make([]string, 0)
-	db := NewDB("./gosort.db")
+	engine := sortengine.NewEngine("gosort.db")
 	for _, checksum := range c.PostFormArray("checksumList") {
-		if ! db.ChecksumExists(checksum) {
+		if ! engine.DB.ChecksumExists(checksum) {
 			checksums = append(checksums, checksum)
 		}
 	}
@@ -133,7 +135,12 @@ func checkChecksums(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": status, "checksums": checksums})
 }
 
+func printVersion() {
+	fmt.Printf("GoSort API Version: %s\n", Version)
+}
+
 func main() {
+	printVersion()
 	gs := InitGoSort()
 	fmt.Printf("SaveDir: %s\n", gs.Settings.Server.SaveDir)
 	fmt.Printf("Port: %d\n", gs.Settings.Server.Port)

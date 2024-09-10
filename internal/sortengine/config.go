@@ -24,7 +24,7 @@ type ClientConfig struct {
 
 func LoadConfig() (*Config, error) {
 	var c Config
-	configFile := filepath.Join("api.yml")
+	configFile := filepath.Join("config.yml")
 	f, err := os.Open(configFile)
 	if err != nil {
 		return nil, fmt.Errorf("unable to open config file: %v", err)
