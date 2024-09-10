@@ -14,9 +14,12 @@ package main
 
 import (
 	//"encoding/json"
+	"bytes"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
+
 	//"path"
 	"path/filepath"
 	//"time"
@@ -56,6 +59,22 @@ var images = []sortengine.Media{
 
 func getStatus200(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, images)
+}
+
+func logRequestMiddleware(c *gin.Context) {
+	bodyBytes, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		fmt.Printf("Error reading body: %s\n", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+	fmt.Printf("Request Body: %s\n", string(bodyBytes))
+	fmt.Printf("Request Method: %s\n", c.Request.Method)
+	fmt.Printf("Request URL: %s\n", c.Request.URL)
+	fmt.Printf("Request Headers: %v\n", c.Request.Header)
 }
 
 func pushFile(c *gin.Context) {
@@ -131,6 +150,7 @@ func main() {
 	fmt.Printf("SaveDir: %s\n", gs.Settings.Server.SaveDir)
 	fmt.Printf("Port: %d\n", gs.Settings.Server.Port)
 	router := gin.Default()
+	router.Use(logRequestMiddleware)
 	router.GET("/status", getStatus200)
 	router.POST("/file", pushFile)
 	router.GET("/file", checkFile)

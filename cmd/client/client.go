@@ -66,6 +66,7 @@ func (c *Client) CheckForChecksums(filenames []string) (map[string]bool, error) 
 	request.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}
+	fmt.Printf("Request: %+v\n", request)
 	response, err := client.Do(request)
 	if err != nil {
 		fmt.Printf("Error sending request: %s\n", err.Error())
