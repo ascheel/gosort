@@ -44,8 +44,8 @@ func NewClient() *Client {
 func (c *Client) CheckForChecksums(filenames []string) (map[string]bool, error) {
 	// Create buffer to hold multipart form data
 	
-	body := new(bytes.Buffer)
-	writer := multipart.NewWriter(body)
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
 
 	// Create a map of checksums to filenames
 	fileMap := make(map[string]string)
@@ -65,46 +65,58 @@ func (c *Client) CheckForChecksums(filenames []string) (map[string]bool, error) 
 		fileMap[md5sum] = filename
 		checksumList.Checksums = append(checksumList.Checksums, md5sum)
 	}
-	checksumJson, err := json.Marshal(checksumList)
+
+	dataBytes, err := json.Marshal(checksumList)
 	if err != nil {
 		fmt.Printf("Error marshalling checksums: %s\n", err.Error())
 		return make(map[string]bool, 0), err
 	}
 
-	fw, err := writer.CreateFormField("checksums")
+	dataPart, err := writer.CreateFormField("checksums")
 	if err != nil {
 		fmt.Printf("Error creating form field: %s\n", err.Error())
 		return make(map[string]bool, 0), err
 	}
-	_, err = fw.Write(checksumJson)
-	if err != nil {
-		fmt.Printf("Error writing checksums: %s\n", err.Error())
-		return make(map[string]bool, 0), err
-	}
+
+	dataPart.Write(dataBytes)
+
 	writer.Close()
 
-	url := fmt.Sprintf("http://%s/checksums", c.config.Client.Host)
-
-	request, err := http.NewRequest("POST", url, body)
+	request, err := http.NewRequest("POST", fmt.Sprintf("http://%s/checksums", c.config.Client.Host), &body)
 	if err != nil {
 		fmt.Printf("Error creating request: %s\n", err.Error())
-		return make(map[string]bool), err
+		return make(map[string]bool, 0), err
 	}
 
-	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Content-Type", writer.FormDataContentType())
 
+	// Send it
 	client := &http.Client{}
-	fmt.Printf("Request: %+v\n", request)
 	response, err := client.Do(request)
 	if err != nil {
 		fmt.Printf("Error sending request: %s\n", err.Error())
-		return make(map[string]bool), err
+		return make(map[string]bool, 0), err
 	}
 	defer response.Body.Close()
 
-	fmt.Printf("Response: %v\n", response.Body)
-	
-	return make(map[string]bool), nil
+	responseBody, _ := io.ReadAll(response.Body)
+	var responseData map[string]map[string]bool
+	//var responseData map[string]bool
+	err = json.Unmarshal(responseBody, &responseData)
+	fmt.Printf("Response: %s\n", responseData["results"])
+	return responseData["results"], nil
+}
+
+func (c *Client) ChecksumExists(filename string) bool {
+	checksums, err := c.CheckForChecksums([]string{filename})
+	if err != nil {
+		fmt.Printf("Error checking for checksums: %s\n", err.Error())
+		return false
+	}
+	for _, v := range checksums {
+		return v
+	}
+	return false
 }
 
 func (c *Client) SendFile(filename string) error {
@@ -119,17 +131,28 @@ func (c *Client) SendFile(filename string) error {
 	defer file.Close()
 
 	// Check if checksum already exists on host
-	result, err := c.CheckForChecksums([]string{filename})
-	if err != nil {
-		fmt.Printf("Error checking for checksums: %s\n", err.Error())
-		return err
+	if c.ChecksumExists(filename) {
+		fmt.Printf("Checksum already exists on server.  Skipping file.\n")
+		return nil
 	}
-	fmt.Printf("127 Result: %v\n", result)
 
-	return nil
 	// Create buffer.  This will hold our multipart form data
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
+
+	media := sortengine.NewMediaFile(filename)
+	mediaPart, err := writer.CreateFormField("media")
+	if err != nil {
+		fmt.Printf("Error creating form field: %s\n", err.Error())
+		return err
+	}
+
+	mediaJson, err := json.Marshal(media)
+	if err != nil {
+		fmt.Printf("Error marshalling media: %s\n", err.Error())
+		return err
+	}
+	mediaPart.Write(mediaJson)
 
 	// Create a new form-data field
 	part, err := writer.CreateFormFile("file", filepath.Base(filename))
@@ -181,13 +204,25 @@ func (c *Client) SendFile(filename string) error {
 func TestUpload() {
 	client := NewClient()
 
-	filename := "/home/art/pics/2015/20150802_222506.jpg"
+	homedir, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Printf("Error getting home directory: %s\n", err.Error())
+		os.Exit(1)
+	}
+
+	filename := filepath.Join(homedir, "pics/2015/20150802_222506.jpg")
 	client.SendFile(filename)
 }
 
 func TestChecksum() {
 	client := NewClient()
-	filename := "/home/art/pics/2015/20150802_222506.jpg"
+	homedir, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Printf("Error getting home directory: %s\n", err.Error())
+		os.Exit(1)
+	}
+
+	filename := filepath.Join(homedir, "pics/2015/20150802_222506.jpg")
 	client.CheckForChecksums([]string{filename})
 }
 
@@ -259,8 +294,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	TestChecksum()
-	//TestUpload()
+	//TestChecksum()
+	TestUpload()
 	os.Exit(0)
 
 	dir := os.Args[1]

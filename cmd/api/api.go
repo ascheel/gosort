@@ -13,7 +13,7 @@ package main
 // POST /images/checksum - accept a checksum and return whether it exists
 
 import (
-	//"encoding/json"
+	"encoding/json"
 	"bytes"
 	"fmt"
 	"io"
@@ -86,14 +86,27 @@ func pushFile(c *gin.Context) {
 	// Must bring in the following data:
 	// Binary data named "file"
 	// Media struct (populated) named "media"
+	form, err := c.MultipartForm()
+	if err != nil {
+		c.String(http.StatusBadRequest, fmt.Sprintf("get multipart form err: %s", err.Error()))
+		return
+	}
+
+	fmt.Printf("Form: %+v\n", form.Value)
+	jsonStr := c.Request.FormValue("media")
+	fmt.Printf("JSON: %s\n", jsonStr)
+	
+	var media sortengine.Media
+	err = c.ShouldBindJSON(&media)
+
 	data, err := c.FormFile("file")
 	if err != nil {
 		c.String(http.StatusBadRequest, fmt.Sprintf("get form err: %s", err.Error()))
 		return
 	}
 
-	file := c.PostForm("media")
-	media := sortengine.MediaFromJSON(file)
+	//file := c.PostForm("media")
+	//media := sortengine.MediaFromJSON(file)
 	engine := sortengine.NewEngine()
 
 	// Check if checksum exists
@@ -102,7 +115,7 @@ func pushFile(c *gin.Context) {
 		return
 	}
 
-	newFilename := engine.GetNewFilename(media)
+	//newFilename := engine.GetNewFilename(media)
 
 	shortFilename := filepath.Base(data.Filename)
 	fmt.Printf("Uploaded file: %s\n", shortFilename)
@@ -111,10 +124,10 @@ func pushFile(c *gin.Context) {
 	// But first, you need to get a temporary file name
 	// This is to prevent incomplete files from being saved
 
-	if err := c.SaveUploadedFile(data, newFilename); err != nil {
-		c.String(http.StatusInternalServerError, fmt.Sprintf("Upload file err: %s\n", err.Error()))
-		return
-	}
+	// if err := c.SaveUploadedFile(data, newFilename); err != nil {
+	// 	c.String(http.StatusInternalServerError, fmt.Sprintf("Upload file err: %s\n", err.Error()))
+	// 	return
+	// }
 
 	// On success, move file to true destination
 
@@ -137,36 +150,27 @@ func checkFile(c *gin.Context) {
 
 func checkChecksums(c *gin.Context) {
 	fmt.Printf("Request: %+v\n", c.Request)
-	// checksums := make(map[string]bool)
-	// engine := sortengine.NewEngine()
-	
-	// type ChecksumList struct {
-	// 	Checksums []string	`json:"checksums"`
-	// }
 
-	jsonData := c.PostForm("checksums")
-	fmt.Printf("JSON Data: %v\n", jsonData)
+	form, err := c.MultipartForm()
+	if err != nil {
+		c.String(http.StatusBadRequest, fmt.Sprintf("get multipart form err: %s", err.Error()))
+		return
+	}
 
-	c.Status(http.StatusOK)
+	var results = make(map[string]bool)
+	var checksumData map[string][]string
 
-	// var checksumList ChecksumList
-	// err := c.BindJSON(&checksumList)
-	// if err != nil {
-	// 	fmt.Printf("Error binding JSON: %s\n", err.Error())
-	// 	c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-	// 	return
-	// }
-	// checksumString := c.PostForm("checksums")
-	// fmt.Printf("ChecksumString: %s\n", checksumString)
+	err = json.Unmarshal([]byte(form.Value["checksums"][0]), &checksumData)
+	if err != nil {
+		c.String(http.StatusBadRequest, fmt.Sprintf("Error unmarshalling JSON: %s", err.Error()))
+		return
+	}
+	checksumList := checksumData["checksums"]
+	for _, md5sum := range checksumList {
+		results[md5sum] = checksumExists(md5sum)
+	}
 
-	// fmt.Printf("ChecksumList: %+v\n", checksumList)
-	// for _, md5sum := range checksumList.Checksums {
-	// 	fmt.Printf("Checksum: %v\n", md5sum)
-	// 	checksums[md5sum] = engine.DB.ChecksumExists(md5sum)
-	// }
-	// //c.IndentedJSON(http.StatusOK, Status{Status: status})
-	// fmt.Printf("Checksums: %+v\n", checksums)
-	// c.JSON(http.StatusOK, gin.H{"checksums": checksums})
+	c.JSON(http.StatusOK, gin.H{"results": results})
 }
 
 func printVersion() {

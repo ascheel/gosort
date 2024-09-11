@@ -76,8 +76,9 @@ func (d *DB) ChecksumExists(checksum string) (bool) {
 
 func (d *DB)Init() error {
 	var err error
-	d.db, err = sql.Open("sqlite3", d.filename)
+	d.db, err = sql.Open("sqlite", d.filename)
 	if err != nil {
+		fmt.Printf("Error opening database: %v\n", err)
 		return err
 	}
 
