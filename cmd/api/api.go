@@ -71,10 +71,15 @@ func logRequestMiddleware(c *gin.Context) {
 
 	c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
-	fmt.Printf("Request Body: %s\n", string(bodyBytes))
+	if len(bodyBytes) < 1000 {
+		fmt.Printf("\nRequest Body: %s\n", string(bodyBytes))
+	} else {
+		fmt.Printf("\nRequest Body: %s\n", string(bodyBytes[:256]))
+	}
+	//fmt.Printf("Request Body: %s\n", string(bodyBytes))
 	fmt.Printf("Request Method: %s\n", c.Request.Method)
 	fmt.Printf("Request URL: %s\n", c.Request.URL)
-	fmt.Printf("Request Headers: %v\n", c.Request.Header)
+	fmt.Printf("Request Headers: %v\n\n", c.Request.Header)
 }
 
 func pushFile(c *gin.Context) {
@@ -131,13 +136,37 @@ func checkFile(c *gin.Context) {
 }
 
 func checkChecksums(c *gin.Context) {
-	checksums := make(map[string]bool)
-	engine := sortengine.NewEngine()
-	for _, md5sum := range c.PostFormArray("checksumList") {
-		checksums[md5sum] = engine.DB.ChecksumExists(md5sum)
-	}
-	//c.IndentedJSON(http.StatusOK, Status{Status: status})
-	c.JSON(http.StatusOK, gin.H{"checksums": checksums})
+	fmt.Printf("Request: %+v\n", c.Request)
+	// checksums := make(map[string]bool)
+	// engine := sortengine.NewEngine()
+	
+	// type ChecksumList struct {
+	// 	Checksums []string	`json:"checksums"`
+	// }
+
+	jsonData := c.PostForm("checksums")
+	fmt.Printf("JSON Data: %v\n", jsonData)
+
+	c.Status(http.StatusOK)
+
+	// var checksumList ChecksumList
+	// err := c.BindJSON(&checksumList)
+	// if err != nil {
+	// 	fmt.Printf("Error binding JSON: %s\n", err.Error())
+	// 	c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	// 	return
+	// }
+	// checksumString := c.PostForm("checksums")
+	// fmt.Printf("ChecksumString: %s\n", checksumString)
+
+	// fmt.Printf("ChecksumList: %+v\n", checksumList)
+	// for _, md5sum := range checksumList.Checksums {
+	// 	fmt.Printf("Checksum: %v\n", md5sum)
+	// 	checksums[md5sum] = engine.DB.ChecksumExists(md5sum)
+	// }
+	// //c.IndentedJSON(http.StatusOK, Status{Status: status})
+	// fmt.Printf("Checksums: %+v\n", checksums)
+	// c.JSON(http.StatusOK, gin.H{"checksums": checksums})
 }
 
 func printVersion() {

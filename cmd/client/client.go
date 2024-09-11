@@ -42,22 +42,50 @@ func NewClient() *Client {
 }
 
 func (c *Client) CheckForChecksums(filenames []string) (map[string]bool, error) {
+	// Create buffer to hold multipart form data
+	
+	body := new(bytes.Buffer)
+	writer := multipart.NewWriter(body)
+
+	// Create a map of checksums to filenames
 	fileMap := make(map[string]string)
-	checksumList := make([]string, 0)
-	//var err error
+
+	type ChecksumList struct {
+		Checksums []string `json:"checksums"`
+	}
+
+	checksumList := ChecksumList{Checksums: make([]string, 0)}
+
 	for _, filename := range filenames {
 		md5sum, err := checksum(filename)
 		if err != nil {
 			fmt.Printf("Error calculating checksum: %s\n", err.Error())
 			return make(map[string]bool, 0), err
 		}
-		fileMap[filename] = md5sum
-		checksumList = append(checksumList, md5sum)
+		fileMap[md5sum] = filename
+		checksumList.Checksums = append(checksumList.Checksums, md5sum)
+	}
+	checksumJson, err := json.Marshal(checksumList)
+	if err != nil {
+		fmt.Printf("Error marshalling checksums: %s\n", err.Error())
+		return make(map[string]bool, 0), err
 	}
 
+	fw, err := writer.CreateFormField("checksums")
+	if err != nil {
+		fmt.Printf("Error creating form field: %s\n", err.Error())
+		return make(map[string]bool, 0), err
+	}
+	_, err = fw.Write(checksumJson)
+	if err != nil {
+		fmt.Printf("Error writing checksums: %s\n", err.Error())
+		return make(map[string]bool, 0), err
+	}
+	writer.Close()
+
 	url := fmt.Sprintf("http://%s/checksums", c.config.Client.Host)
-	jsonBytes, err := json.Marshal(checksumList)
-	request, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonBytes))
+
+	request, err := http.NewRequest("POST", url, body)
 	if err != nil {
 		fmt.Printf("Error creating request: %s\n", err.Error())
 		return make(map[string]bool), err
@@ -75,6 +103,7 @@ func (c *Client) CheckForChecksums(filenames []string) (map[string]bool, error) 
 	defer response.Body.Close()
 
 	fmt.Printf("Response: %v\n", response.Body)
+	
 	return make(map[string]bool), nil
 }
 
@@ -91,11 +120,16 @@ func (c *Client) SendFile(filename string) error {
 
 	// Check if checksum already exists on host
 	result, err := c.CheckForChecksums([]string{filename})
-	fmt.Printf("Result: %v\n", result)
+	if err != nil {
+		fmt.Printf("Error checking for checksums: %s\n", err.Error())
+		return err
+	}
+	fmt.Printf("127 Result: %v\n", result)
 
+	return nil
 	// Create buffer.  This will hold our multipart form data
-	var requestBody bytes.Buffer
-	writer := multipart.NewWriter(&requestBody)
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
 
 	// Create a new form-data field
 	part, err := writer.CreateFormFile("file", filepath.Base(filename))
@@ -121,7 +155,7 @@ func (c *Client) SendFile(filename string) error {
 
 	// Create the POST request
 	url := fmt.Sprintf("http://%s/file", c.config.Client.Host)
-	request, err := http.NewRequest("POST", url, &requestBody)
+	request, err := http.NewRequest("POST", url, &body)
 	if err != nil {
 		// Error occurred.
 		fmt.Printf("Unable to POST: %v\n", err)
@@ -147,8 +181,14 @@ func (c *Client) SendFile(filename string) error {
 func TestUpload() {
 	client := NewClient()
 
-	filename := "/home/scheel/pics/2015/20150802_222506.jpg"
+	filename := "/home/art/pics/2015/20150802_222506.jpg"
 	client.SendFile(filename)
+}
+
+func TestChecksum() {
+	client := NewClient()
+	filename := "/home/art/pics/2015/20150802_222506.jpg"
+	client.CheckForChecksums([]string{filename})
 }
 
 func checksum(filename string) (string, error) {
@@ -219,7 +259,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	TestUpload()
+	TestChecksum()
+	//TestUpload()
 	os.Exit(0)
 
 	dir := os.Args[1]
