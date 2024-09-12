@@ -28,13 +28,13 @@ func FileOrDirExists(path string) bool {
 func NewEngine() *Engine {
 	engine := &Engine{}
 	var err error
-	engine.config, err = LoadConfig()
+	engine.Config, err = LoadConfig()
 	if err != nil {
 		log.Fatalf("Unable to load config: %v", err)
 	}
 	//engine.DbInit()
-	engine.dbFilename          = engine.config.Server.DBFile
-	engine.DB                  = NewDB(engine.dbFilename, engine.config)
+	engine.dbFilename          = engine.Config.Server.DBFile
+	engine.DB                  = NewDB(engine.dbFilename, engine.Config)
 	engine.report              = make(map[string][]string)
 	engine.report["image"]     = make([]string, 0)
 	engine.report["video"]     = make([]string, 0)
@@ -49,7 +49,7 @@ type Engine struct {
 	DB *DB
 	report map[string][]string
 	count uint64
-	config *Config
+	Config *Config
 }
 
 // func (e *Engine) GetChecksum(checksum string) (bool) {
@@ -70,7 +70,7 @@ type Engine struct {
 
 func (e *Engine) GetNewFilename(m *Media) (string) {
 	// fmt.Printf("  Getting new filename: %s\n",
-	dst := e.config.Server.SaveDir
+	dst := e.Config.Server.SaveDir
 
 	TimeDirFormat := "2006-01"
 	TimeFormat := "2006-01-02 15.04.05"

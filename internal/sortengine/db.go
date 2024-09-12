@@ -128,14 +128,14 @@ func (d *DB)Init() error {
 		if err != nil {
 			log.Fatalln("Cannot insert.")
 		}
-		stmt, err := tx.Prepare("INSERT INTO settings (setting, value) VALUES (?, ?)")
-		if err != nil {
-			log.Fatalln("Cannot insert (2).")
-		}
-		_, err = stmt.Exec("destination", dst)
-		if err != nil {
-			log.Fatalln("Failed to insert.")
-		}
+		// stmt, err := tx.Prepare("INSERT INTO settings (setting, value) VALUES (?, ?)")
+		// if err != nil {
+		// 	log.Fatalln("Cannot insert (2).")
+		// }
+		// _, err = stmt.Exec("destination", dst)
+		// if err != nil {
+		// 	log.Fatalln("Failed to insert.")
+		// }
 		err = tx.Commit()
 		if err != nil {
 			log.Fatalln("Unable to commit destination directory.")

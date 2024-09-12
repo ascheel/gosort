@@ -32,22 +32,6 @@ var (
 	Version string
 )
 
-type GoSort struct  {
-	Settings *sortengine.Config
-}
-
-func InitGoSort() *GoSort {
-	var err error
-	gs := &GoSort{}
-	gs.Settings, err = sortengine.LoadConfig()
-	if err != nil {
-		fmt.Printf("Error loading config: %s\n", err.Error())
-		os.Exit(1)
-	}
-	fmt.Printf("Settings: %+v\n", gs.Settings)
-	return gs
-}
-
 type Status struct {
 	Status string	`json:"status"`
 }
@@ -83,31 +67,34 @@ func logRequestMiddleware(c *gin.Context) {
 }
 
 func pushFile(c *gin.Context) {
+	engine := sortengine.NewEngine()
 	// Must bring in the following data:
 	// Binary data named "file"
 	// Media struct (populated) named "media"
+
 	form, err := c.MultipartForm()
 	if err != nil {
 		c.String(http.StatusBadRequest, fmt.Sprintf("get multipart form err: %s", err.Error()))
 		return
 	}
 
-	fmt.Printf("Form: %+v\n", form.Value)
-	jsonStr := c.Request.FormValue("media")
-	fmt.Printf("JSON: %s\n", jsonStr)
-	
 	var media sortengine.Media
-	err = c.ShouldBindJSON(&media)
 
-	data, err := c.FormFile("file")
+	mediaString := form.Value["media"][0]
+
+	err	= json.Unmarshal([]byte(mediaString), &media)
 	if err != nil {
-		c.String(http.StatusBadRequest, fmt.Sprintf("get form err: %s", err.Error()))
+		fmt.Printf("Error unmarshalling JSON: %s\n", err.Error())
+		c.String(http.StatusBadRequest, fmt.Sprintf("Error unmarshalling JSON: %s", err.Error()))
 		return
 	}
 
-	//file := c.PostForm("media")
-	//media := sortengine.MediaFromJSON(file)
-	engine := sortengine.NewEngine()
+	data, err := c.FormFile("file")
+	if err != nil {
+		fmt.Printf("Error getting form file: %s\n", err.Error())
+		c.String(http.StatusBadRequest, fmt.Sprintf("get form err: %s", err.Error()))
+		return
+	}
 
 	// Check if checksum exists
 	if engine.DB.ChecksumExists(media.Checksum) {
@@ -115,10 +102,10 @@ func pushFile(c *gin.Context) {
 		return
 	}
 
-	//newFilename := engine.GetNewFilename(media)
-
 	shortFilename := filepath.Base(data.Filename)
 	fmt.Printf("Uploaded file: %s\n", shortFilename)
+
+	newFilename := engine.GetNewFilename(&media)
 
 	// Create temp file for saving
 	// But first, you need to get a temporary file name
@@ -153,6 +140,7 @@ func checkChecksums(c *gin.Context) {
 
 	form, err := c.MultipartForm()
 	if err != nil {
+		fmt.Printf("Error getting form: %s\n", err.Error())
 		c.String(http.StatusBadRequest, fmt.Sprintf("get multipart form err: %s", err.Error()))
 		return
 	}
@@ -162,6 +150,7 @@ func checkChecksums(c *gin.Context) {
 
 	err = json.Unmarshal([]byte(form.Value["checksums"][0]), &checksumData)
 	if err != nil {
+		fmt.Printf("Error unmarshalling JSON: %s\n", err.Error())
 		c.String(http.StatusBadRequest, fmt.Sprintf("Error unmarshalling JSON: %s", err.Error()))
 		return
 	}
@@ -177,11 +166,17 @@ func printVersion() {
 	fmt.Printf("GoSort API Version: %s\n", Version)
 }
 
+func checkSaveDir() {
+	engine := sortengine.NewEngine()
+	if _, err := os.Stat(engine.Config.Server.SaveDir); os.IsNotExist(err) {
+		fmt.Printf("Save directory does not exist: %s\n", engine.Config.Server.SaveDir)
+		os.Exit(1)
+	}
+}
+
 func main() {
 	printVersion()
-	gs := InitGoSort()
-	fmt.Printf("SaveDir: %s\n", gs.Settings.Server.SaveDir)
-	fmt.Printf("Port: %d\n", gs.Settings.Server.Port)
+	checkSaveDir()
 	router := gin.Default()
 	router.Use(logRequestMiddleware)
 	router.GET("/status", getStatus200)

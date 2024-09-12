@@ -103,7 +103,12 @@ func (c *Client) CheckForChecksums(filenames []string) (map[string]bool, error) 
 	var responseData map[string]map[string]bool
 	//var responseData map[string]bool
 	err = json.Unmarshal(responseBody, &responseData)
-	fmt.Printf("Response: %s\n", responseData["results"])
+	if err != nil {
+		fmt.Printf("Error unmarshalling response: %s\n", err.Error())
+		return make(map[string]bool, 0), err
+	}
+	
+	fmt.Printf("Response: %v\n", responseData["results"])
 	return responseData["results"], nil
 }
 

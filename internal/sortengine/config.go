@@ -44,6 +44,7 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("unable to determine home directory: %v", err)
 	}
 	c.Server.SaveDir = strings.Replace(c.Server.SaveDir, "%HOME%", homeDir, 1)
+	c.Server.DBFile = strings.Replace(c.Server.DBFile, "%SAVEDIR%", c.Server.SaveDir, 1)
 
 	return &c, nil
 }
