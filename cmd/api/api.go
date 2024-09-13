@@ -74,7 +74,7 @@ func pushFile(c *gin.Context) {
 
 	form, err := c.MultipartForm()
 	if err != nil {
-		c.String(http.StatusBadRequest, fmt.Sprintf("get multipart form err: %s", err.Error()))
+		c.JSON(http.StatusBadRequest, gin.H{"status": "failed", "reason": err.Error()})
 		return
 	}
 
@@ -85,14 +85,14 @@ func pushFile(c *gin.Context) {
 	err	= json.Unmarshal([]byte(mediaString), &media)
 	if err != nil {
 		fmt.Printf("Error unmarshalling JSON: %s\n", err.Error())
-		c.String(http.StatusBadRequest, fmt.Sprintf("Error unmarshalling JSON: %s", err.Error()))
+		c.JSON(http.StatusBadRequest, gin.H{"status": "failed", "reason": err.Error()})
 		return
 	}
 
 	data, err := c.FormFile("file")
 	if err != nil {
 		fmt.Printf("Error getting form file: %s\n", err.Error())
-		c.String(http.StatusBadRequest, fmt.Sprintf("get form err: %s", err.Error()))
+		c.JSON(http.StatusBadRequest, gin.H{"status": "failed", "reason": err.Error()})
 		return
 	}
 
@@ -106,19 +106,35 @@ func pushFile(c *gin.Context) {
 	fmt.Printf("Uploaded file: %s\n", shortFilename)
 
 	newFilename := engine.GetNewFilename(&media)
+	tmpFilename := fmt.Sprintf("%s.download", newFilename)
 
 	// Create temp file for saving
 	// But first, you need to get a temporary file name
 	// This is to prevent incomplete files from being saved
 
-	// if err := c.SaveUploadedFile(data, newFilename); err != nil {
-	// 	c.String(http.StatusInternalServerError, fmt.Sprintf("Upload file err: %s\n", err.Error()))
-	// 	return
-	// }
+	if err := c.SaveUploadedFile(data, tmpFilename); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"status": "failed", "reason": err.Error()})
+		fmt.Printf("Error saving file: %s\n", err.Error())
+		return
+	}
 
 	// On success, move file to true destination
-
-	c.String(http.StatusOK, fmt.Sprintf("File %s uploaded successfully", shortFilename))
+	if err := os.Rename(tmpFilename, newFilename); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"status": "failed", "reason": err.Error()})
+		fmt.Printf("Error renaming file: %s\n", err.Error())
+		return
+	}
+	err = engine.DB.AddFileToDB(&media)
+	if err != nil {
+		err = os.Remove(newFilename)
+		if err != nil {
+			fmt.Printf("Error removing file: %s\n", err.Error())
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"status": "failed", "reason": err.Error()})
+		fmt.Printf("Error adding file to DB: %s\n", err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "success"})
 }
 
 func checksumExists(checksum string) bool {

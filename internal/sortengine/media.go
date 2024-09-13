@@ -10,18 +10,17 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
-	"log"
+	//"log"
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/barasher/go-exiftool"
-	"github.com/kolesa-team/goexiv"
+	//"github.com/kolesa-team/goexiv"
 )
 
 var TimeFormat string = "%Y:%m:%d %H:%M:%S"
@@ -167,35 +166,6 @@ func (m *Media) IsRecognized() bool {
 	return m.IsImage() || m.IsVideo()
 }
 
-// func (m *Media) GetNewFilename() (string, error) {
-// 	dst := "/tmp"
-// 	TimeDirFormat := "2006-01"
-// 	TimeFormat := "2006-01-02 15.04.05"
-// 	num := 0
-// 	dirname := filepath.Join(dst, m.CreationDate.Format(TimeDirFormat))
-// 	for {
-// 		shortname := m.CreationDate.Format(TimeFormat)
-// 		if num > 0 {
-// 			shortname = fmt.Sprintf("%s-%d", shortname, num)
-// 		}
-// 		shortname = fmt.Sprintf("%s.%s", shortname, m.Ext())
-// 		filename := filepath.Join(dirname, shortname)
-
-// 		if FileOrDirExists(filename) {
-// 			sum, err := Checksum(filename)
-// 			if err != nil {
-// 				return "", err
-// 			}
-// 			if m.Checksum == sum {
-// 				num += 1
-// 				continue
-// 			}
-// 		} else {
-// 			return filename, nil
-// 		}
-// 	}
-// }
-
 func (m *Media) GetBounds() (int, int, error) {
 	// Note that this is a disgusting drain on CPU resources
 	//   because it has to decode the entire JPG file.  And
@@ -214,14 +184,6 @@ func (m *Media) GetBounds() (int, int, error) {
 	width := img.Bounds().Dx()
 	height := img.Bounds().Dy()
 	return width, height, nil
-}
-
-func lineno() string {
-	_, file, line, ok := runtime.Caller(1)
-	if !ok {
-		panic(ok)
-	}
-	return fmt.Sprintf("%s: %d", file, line)
 }
 
 func (m *Media) Init() error {
@@ -284,9 +246,12 @@ func (m *Media) GetDate() (time.Time, error) {
 	var fields []string
 	if m.IsImage() {
 		fields = []string{
-			"Exif.Photo.DateTimeDigitized",
-			"Exif.Photo.DateTimeOriginal",
-			"Exif.Image.DateTime",
+			// "Exif.Photo.DateTimeDigitized",
+			// "Exif.Photo.DateTimeOriginal",
+			// "Exif.Image.DateTime",
+			"DateTimeDigitized",
+			"DateTimeOriginal",
+			"DateTime",
 		}
 	} else if m.IsVideo() {
 		// Currently supports .mp4 only
@@ -329,19 +294,8 @@ func (m *Media) GetMetadata() (map[string]string, error) {
 }
 
 func (m *Media) GetImageMetadata() (map[string]string, error) {
-	img, err := goexiv.Open(m.Filename)
-	if err != nil {
-		msg := fmt.Sprintf("Unable to read file %s: %s\n", m.Filename, err)
-		log.Fatal(msg)
-	}
-
-	err = img.ReadMetadata()
-	if err != nil {
-		msg := fmt.Sprintf("Unable to retrieve metadata: %s\n", err)
-		log.Fatal(msg)
-	}
-
-	return img.GetExifData().AllTags(), nil
+	et := GetExiftool()
+	return et.ReadMetadata(m.Filename), nil
 }
 
 func (m *Media) GetFileMetadata() (map[string]string, error) {
