@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"image"
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
@@ -166,26 +165,6 @@ func (m *Media) IsRecognized() bool {
 	return m.IsImage() || m.IsVideo()
 }
 
-func (m *Media) GetBounds() (int, int, error) {
-	// Note that this is a disgusting drain on CPU resources
-	//   because it has to decode the entire JPG file.  And
-	//   WE'RE NOT EVEN USING THE WIDTH x HEIGHT!
-	reader, err := os.Open(m.Filename)
-	if err != nil {
-		return -1, -1, err
-	}
-	defer reader.Close()
-
-	img, _, err := image.Decode(reader)
-	if err != nil {
-		return -1, -1, err
-	}
-
-	width := img.Bounds().Dx()
-	height := img.Bounds().Dy()
-	return width, height, nil
-}
-
 func (m *Media) Init() error {
 	metadata, err := m.GetMetadata()
 	if err != nil {
@@ -209,11 +188,7 @@ func (m *Media) Init() error {
 	if err != nil {
 		return err
 	}
-	// m.Width, m.Height, err = m.GetBounds()
-	// if err != nil {
-	// 	m.Width = -1
-	// 	m.Height = -1
-	// }
+
 	m.CreationDate, err = m.GetDate()
 	if err != nil {
 		return err
