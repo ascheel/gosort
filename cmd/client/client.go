@@ -28,6 +28,7 @@ type Client struct {
 	Host string
 	//Engine *sortengine.Engine
 	config *sortengine.Config
+	FileList map[string]sortengine.Media
 }
 
 func NewClient() *Client {
@@ -38,17 +39,24 @@ func NewClient() *Client {
 		fmt.Printf("Error loading config: %s\n", err.Error())
 		os.Exit(1)
 	}
+	client.FileList = make(map[string]sortengine.Media)
 	return client
 }
 
-func (c *Client) CheckForChecksums(filenames []string) (map[string]bool, error) {
+var client *Client = NewClient()
+
+func (c *Client) AddFile(media *sortengine.Media) {
+	c.FileList[media.Filename] = *media
+}
+
+func (c *Client) CheckForChecksums(medias []sortengine.Media) (map[string]bool, error) {
 	// Create buffer to hold multipart form data
 	
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 
 	// Create a map of checksums to filenames
-	fileMap := make(map[string]string)
+	fileMap := make(map[string]sortengine.Media)
 
 	type ChecksumList struct {
 		Checksums []string `json:"checksums"`
@@ -56,13 +64,13 @@ func (c *Client) CheckForChecksums(filenames []string) (map[string]bool, error) 
 
 	checksumList := ChecksumList{Checksums: make([]string, 0)}
 
-	for _, filename := range filenames {
-		md5sum, err := checksum(filename)
+	for _, media := range medias {
+		md5sum, err := checksum(media.Filename)
 		if err != nil {
 			fmt.Printf("Error calculating checksum: %s\n", err.Error())
 			return make(map[string]bool, 0), err
 		}
-		fileMap[md5sum] = filename
+		fileMap[md5sum] = media
 		checksumList.Checksums = append(checksumList.Checksums, md5sum)
 	}
 
@@ -108,12 +116,11 @@ func (c *Client) CheckForChecksums(filenames []string) (map[string]bool, error) 
 		return make(map[string]bool, 0), err
 	}
 	
-	fmt.Printf("Response: %v\n", responseData["results"])
 	return responseData["results"], nil
 }
 
-func (c *Client) ChecksumExists(filename string) bool {
-	checksums, err := c.CheckForChecksums([]string{filename})
+func (c *Client) ChecksumExists(media *sortengine.Media) bool {
+	checksums, err := c.CheckForChecksums([]sortengine.Media{*media})
 	if err != nil {
 		fmt.Printf("Error checking for checksums: %s\n", err.Error())
 		return false
@@ -124,28 +131,27 @@ func (c *Client) ChecksumExists(filename string) bool {
 	return false
 }
 
-func (c *Client) SendFile(filename string) error {
-	fmt.Println("Sending file...")
-	
+//func (c *Client) SendFile(filename string) error {
+func (c *Client) SendFile(media *sortengine.Media) error {
 	// Open the file
-	file, err := os.Open(filename)
+	file, err := os.Open(media.Filename)
 	if err != nil {
 		fmt.Printf("Error opening file: %s\n", err.Error())
 		return err
 	}
 	defer file.Close()
 
-	// Check if checksum already exists on host
-	if c.ChecksumExists(filename) {
-		fmt.Printf("Checksum already exists on server.  Skipping file.\n")
-		return nil
-	}
+	// // Check if checksum already exists on host
+	// if c.ChecksumExists(media) {
+	// 	fmt.Printf("Checksum already exists on server.  Skipping file.\n")
+	// 	return nil
+	// }
 
 	// Create buffer.  This will hold our multipart form data
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 
-	media := sortengine.NewMediaFile(filename)
+	//media := sortengine.NewMediaFile(filename)
 	mediaPart, err := writer.CreateFormField("media")
 	if err != nil {
 		fmt.Printf("Error creating form field: %s\n", err.Error())
@@ -160,7 +166,7 @@ func (c *Client) SendFile(filename string) error {
 	mediaPart.Write(mediaJson)
 
 	// Create a new form-data field
-	part, err := writer.CreateFormFile("file", filepath.Base(filename))
+	part, err := writer.CreateFormFile("file", filepath.Base(media.Filename))
 	if err != nil {
 		fmt.Printf("Error creating form file: %s\n", err.Error())
 		return err
@@ -196,19 +202,22 @@ func (c *Client) SendFile(filename string) error {
 	httpClient := &http.Client{}
 	response, err := httpClient.Do(request)
 	if err != nil {
-		fmt.Printf("136 Error sending request: %s\n", err.Error())
+		fmt.Printf("Error sending request: %s\n", err.Error())
 		return err
 	}
 	defer response.Body.Close()
 
-	fmt.Printf("Response: %v\n", response)
-
+	var responseMap map[string]string
+	err = json.NewDecoder(response.Body).Decode(&responseMap)
+	if err != nil {
+		fmt.Printf("Error decoding response: %s\n", err.Error())
+		return err
+	}
+	
 	return nil
 }
 
 func TestUpload() {
-	client := NewClient()
-
 	homedir, err := os.UserHomeDir()
 	if err != nil {
 		fmt.Printf("Error getting home directory: %s\n", err.Error())
@@ -216,11 +225,10 @@ func TestUpload() {
 	}
 
 	filename := filepath.Join(homedir, "pics/2015/20150802_222506.jpg")
-	client.SendFile(filename)
+	client.SendFile(sortengine.NewMediaFile(filename))
 }
 
 func TestChecksum() {
-	client := NewClient()
 	homedir, err := os.UserHomeDir()
 	if err != nil {
 		fmt.Printf("Error getting home directory: %s\n", err.Error())
@@ -228,7 +236,8 @@ func TestChecksum() {
 	}
 
 	filename := filepath.Join(homedir, "pics/2015/20150802_222506.jpg")
-	client.CheckForChecksums([]string{filename})
+	media := sortengine.NewMediaFile(filename)
+	client.CheckForChecksums([]sortengine.Media{*media})
 }
 
 func checksum(filename string) (string, error) {
@@ -258,15 +267,23 @@ func WalkFunc(path string, info os.FileInfo, err error) error {
 	}
 
 	// Process stuff
-	img := sortengine.NewMediaFile(info.Name())
-	fmt.Printf("Processing %s\n", img.Filename)
-
+	img := sortengine.NewMediaFile(path)
+	client.AddFile(img)
 	return nil
 }
 
+func UploadFiles() {
+	for _, media := range client.FileList {
+		fmt.Printf("Uploading %s\n", media.Filename)
+		client.SendFile(&media)
+	}
+}
+
 func WalkDir(dir string) (error) {
+	fmt.Printf("Gathering files, please wait...\n")
 	filepath.Walk(dir, WalkFunc)
-		return nil
+	UploadFiles()
+	return nil
 }
 
 func checksum100k(filename string) (string, error) {
@@ -300,8 +317,8 @@ func main() {
 	}
 
 	//TestChecksum()
-	TestUpload()
-	os.Exit(0)
+	// TestUpload()
+	// os.Exit(0)
 
 	dir := os.Args[1]
 	WalkDir(dir)
