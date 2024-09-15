@@ -28,8 +28,6 @@ func GetExiftool() *Exiftool {
 		} else {
 			fmt.Println("Exiftool created.")
 		}
-	} else {
-		fmt.Println("Exiftool exists.")
 	}
 	return et
 }
@@ -39,7 +37,7 @@ func (e *Exiftool) ReadMetadata(filename string) map[string]string {
 	metadata := e.et.ExtractMetadata(filename)
 	for _, fileInfo := range metadata {
 		for k, v := range fileInfo.Fields {
-			output[k] = v.(string)
+			output[k] = fmt.Sprintf("%v", v)
 		}
 	}
 	return output

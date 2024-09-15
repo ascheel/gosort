@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/barasher/go-exiftool"
+	//"github.com/barasher/go-exiftool"
 	//"github.com/kolesa-team/goexiv"
 )
 
@@ -182,7 +182,7 @@ func (m *Media) Init() error {
 	m.ModifiedDate = fileInfo.ModTime()
 
 	// Don't need to calculate it unless we're going to insert or check if it exists.  I hope.
-	// m.Checksum, err = checksum(m.FilenameOld)
+	// m.Checksum, err = checksum(m.Filename)
 
 	m.Checksum100k, err = Checksum(m.Filename, true)
 	if err != nil {
@@ -252,7 +252,6 @@ func (m *Media) GetDate() (time.Time, error) {
 	}
 	// No exif data?  Then return the Modified Date.
 	// Linux timestamps do not store creation time.
-	fmt.Printf("  Found no others.  Returning file mod date.  %s\n", m.ModifiedDate.Format("2006-01-02 15.04.05"))
 	return m.ModifiedDate, nil
 }
 
@@ -289,15 +288,11 @@ func (m *Media) GetFileMetadata() (map[string]string, error) {
 }
 
 func (m *Media) GetVideoMetadata() (map[string]string, error) {
-	et, err := exiftool.NewExiftool()
-	if err != nil {
-		panic(err)
-	}
-	defer et.Close()
+	et = GetExiftool()
 
 	metadata := make(map[string]string)
 
-	fileInfos := et.ExtractMetadata(m.Filename)
+	fileInfos := et.et.ExtractMetadata(m.Filename)
 	for _, fileInfo := range fileInfos {
 		if fileInfo.Err != nil {
 			fmt.Printf("Error concerning %v: %v\n", fileInfo.File, fileInfo.Err)
