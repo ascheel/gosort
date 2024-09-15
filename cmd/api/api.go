@@ -126,12 +126,12 @@ func pushFile(c *gin.Context) {
 	}
 	err = engine.DB.AddFileToDB(&media)
 	if err != nil {
-		err = os.Remove(newFilename)
-		if err != nil {
+		err2 := os.Remove(newFilename)
+		if err2 != nil {
 			fmt.Printf("Error removing file: %s\n", err.Error())
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "failed", "reason": err.Error()})
 		fmt.Printf("Error adding file to DB: %s\n", err.Error())
+		c.JSON(http.StatusInternalServerError, gin.H{"status": "failed", "reason": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "success"})
