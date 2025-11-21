@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"fmt"
 	"io"
 	"crypto/sha256"
@@ -63,6 +64,12 @@ func (e *Engine) GetNewFilename(m *Media) (string) {
 	num := 0
 
 	dirname := filepath.Join(dst, m.CreationDate.Format(TimeDirFormat))
+	
+	// Ensure directory exists
+	if err := os.MkdirAll(dirname, 0755); err != nil {
+		panic(fmt.Sprintf("Cannot create directory %s: %v", dirname, err))
+	}
+	
 	for {
 		shortname := m.CreationDate.Format(TimeFormat)
 		if num > 0 {
@@ -70,6 +77,20 @@ func (e *Engine) GetNewFilename(m *Media) (string) {
 		}
 		shortname = fmt.Sprintf("%s.%s", shortname, m.Ext())
 		filename := filepath.Join(dirname, shortname)
+		
+		// CRITICAL: Validate path to prevent path traversal attacks
+		// Ensure the generated path is within the save directory
+		absFilename, err := filepath.Abs(filename)
+		if err != nil {
+			panic(fmt.Sprintf("Cannot get absolute path for %s: %v", filename, err))
+		}
+		absSaveDir, err := filepath.Abs(dst)
+		if err != nil {
+			panic(fmt.Sprintf("Cannot get absolute path for save directory %s: %v", dst, err))
+		}
+		if !strings.HasPrefix(absFilename, absSaveDir) {
+			panic(fmt.Sprintf("Path traversal detected: %s is outside save directory %s", absFilename, absSaveDir))
+		}
 
 		if FileOrDirExists(filename) {
 			sum, err := checksum(filename)
