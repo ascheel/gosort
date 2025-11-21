@@ -15,6 +15,7 @@ package main
 import (
 	"encoding/json"
 	"bytes"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -41,7 +42,7 @@ type Stats struct {
 	Count int `json:"count"`
 }
 
-var engine = sortengine.NewEngine()
+var engine *sortengine.Engine
 
 var stats = Stats{Count: 0}
 
@@ -125,6 +126,55 @@ func pushFile(c *gin.Context) {
 		fmt.Printf("Error renaming file: %s\n", err.Error())
 		return
 	}
+
+	// Recalculate checksum from the saved file to verify integrity
+	// This prevents false duplicates from partial uploads or corrupted data
+	actualChecksum, err := sortengine.Checksum(newFilename, false)
+	if err != nil {
+		err2 := os.Remove(newFilename)
+		if err2 != nil {
+			fmt.Printf("Error removing file: %s\n", err2.Error())
+		}
+		fmt.Printf("Error calculating checksum for saved file: %s\n", err.Error())
+		c.JSON(http.StatusInternalServerError, gin.H{"status": "failed", "reason": "failed to verify file integrity"})
+		return
+	}
+
+	// Verify the checksum matches what the client sent
+	if actualChecksum != media.Checksum {
+		err2 := os.Remove(newFilename)
+		if err2 != nil {
+			fmt.Printf("Error removing file: %s\n", err2.Error())
+		}
+		fmt.Printf("Checksum mismatch: client sent %s, but file has %s\n", media.Checksum, actualChecksum)
+		c.JSON(http.StatusBadRequest, gin.H{"status": "failed", "reason": "checksum mismatch - file may be corrupted"})
+		return
+	}
+
+	// Recalculate checksum100k from the saved file
+	actualChecksum100k, err := sortengine.Checksum(newFilename, true)
+	if err != nil {
+		err2 := os.Remove(newFilename)
+		if err2 != nil {
+			fmt.Printf("Error removing file: %s\n", err2.Error())
+		}
+		fmt.Printf("Error calculating checksum100k for saved file: %s\n", err.Error())
+		c.JSON(http.StatusInternalServerError, gin.H{"status": "failed", "reason": "failed to verify file integrity"})
+		return
+	}
+	media.Checksum100k = actualChecksum100k
+
+	// Double-check the checksum doesn't exist (race condition protection)
+	if engine.DB.ChecksumExists(actualChecksum) {
+		err2 := os.Remove(newFilename)
+		if err2 != nil {
+			fmt.Printf("Error removing file: %s\n", err2.Error())
+		}
+		fmt.Printf("Checksum exists (race condition detected): %s\n", actualChecksum)
+		c.JSON(409, gin.H{"status": "exists"})
+		return
+	}
+
 	err = engine.DB.AddFileToDB(&media)
 	if err != nil {
 		err2 := os.Remove(newFilename)
@@ -227,6 +277,58 @@ func checkSaveDir() {
 
 func main() {
 	printVersion()
+
+	// Parse command-line flags
+	flags := &sortengine.ConfigFlags{}
+	flag.StringVar(&flags.ConfigFile, "config", "", "Path to config file (default: ~/.gosort.yml)")
+	flag.StringVar(&flags.DBFile, "database-file", "", "Database file path (overrides config)")
+	flag.StringVar(&flags.SaveDir, "savedir", "", "Directory to save files (overrides config)")
+	flag.StringVar(&flags.IP, "ip", "", "IP address to bind to (overrides config)")
+	flag.IntVar(&flags.Port, "port", 0, "Port to listen on (overrides config)")
+	flag.BoolVar(&flags.InitConfig, "init", false, "Create default config file and exit")
+	flag.Parse()
+
+	// Handle -init flag
+	if flags.InitConfig {
+		configPath := flags.ConfigFile
+		if configPath == "" {
+			var err error
+			configPath, err = sortengine.GetDefaultConfigPath()
+			if err != nil {
+				fmt.Printf("Error getting default config path: %s\n", err.Error())
+				os.Exit(1)
+			}
+		}
+		if err := sortengine.CreateDefaultConfig(configPath); err != nil {
+			fmt.Printf("Error creating config file: %s\n", err.Error())
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
+	// Load config
+	configPath := flags.ConfigFile
+	if configPath == "" {
+		var err error
+		configPath, err = sortengine.GetDefaultConfigPath()
+		if err != nil {
+			fmt.Printf("Error getting default config path: %s\n", err.Error())
+			os.Exit(1)
+		}
+	}
+
+	config, err := sortengine.LoadConfig(configPath)
+	if err != nil {
+		fmt.Printf("Error loading config: %s\n", err.Error())
+		fmt.Printf("Use -init to create a default config file\n")
+		os.Exit(1)
+	}
+
+	// Apply command-line flags to override config values
+	config.ApplyFlags(flags)
+
+	// Create engine with the config
+	engine = sortengine.NewEngineWithConfig(config)
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)

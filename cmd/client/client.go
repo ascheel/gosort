@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"crypto/md5"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -37,19 +38,36 @@ type FileList struct {
 	Upload bool
 }
 
-func NewClient() *Client {
+func NewClient(configPath string, flags *sortengine.ConfigFlags) *Client {
 	client := &Client{}
 	var err error
-	client.config, err = sortengine.LoadConfig()
+	
+	// Load config if path is provided or use default
+	if configPath == "" {
+		configPath, err = sortengine.GetDefaultConfigPath()
+		if err != nil {
+			fmt.Printf("Error getting default config path: %s\n", err.Error())
+			os.Exit(1)
+		}
+	}
+
+	client.config, err = sortengine.LoadConfig(configPath)
 	if err != nil {
 		fmt.Printf("Error loading config: %s\n", err.Error())
+		fmt.Printf("Use -init to create a default config file\n")
 		os.Exit(1)
 	}
+
+	// Apply command-line flags to override config values
+	if flags != nil {
+		client.config.ApplyFlags(flags)
+	}
+
 	client.FileList = make([]FileList, 0)
 	return client
 }
 
-var client *Client = NewClient()
+var client *Client
 
 func (c *Client) AddFile(media *sortengine.Media) {
 	media.SetChecksum()
@@ -467,10 +485,44 @@ func CheckVersion() {
 
 func main() {
 	printVersion()
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: send <directory>")
+
+	// Parse command-line flags
+	flags := &sortengine.ConfigFlags{}
+	var configPath string
+	flag.StringVar(&configPath, "config", "", "Path to config file (default: ~/.gosort.yml)")
+	flag.StringVar(&flags.Host, "host", "", "Server host address (overrides config)")
+	flag.BoolVar(&flags.InitConfig, "init", false, "Create default config file and exit")
+	flag.Parse()
+
+	// Handle -init flag
+	if flags.InitConfig {
+		initPath := configPath
+		if initPath == "" {
+			var err error
+			initPath, err = sortengine.GetDefaultConfigPath()
+			if err != nil {
+				fmt.Printf("Error getting default config path: %s\n", err.Error())
+				os.Exit(1)
+			}
+		}
+		if err := sortengine.CreateDefaultConfig(initPath); err != nil {
+			fmt.Printf("Error creating config file: %s\n", err.Error())
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
+	// Check for directory argument
+	args := flag.Args()
+	if len(args) < 1 {
+		fmt.Println("Usage: client [flags] <directory>")
+		fmt.Println("\nFlags:")
+		flag.PrintDefaults()
 		os.Exit(1)
 	}
+
+	// Initialize client with config
+	client = NewClient(configPath, flags)
 
 	//TestChecksum()
 	// TestUpload()
@@ -478,6 +530,6 @@ func main() {
 
 	CheckVersion()
 
-	dir := os.Args[1]
+	dir := args[0]
 	WalkDir(dir)
 }

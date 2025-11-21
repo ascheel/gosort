@@ -20,12 +20,20 @@ func FileOrDirExists(path string) bool {
 }
 
 func NewEngine() *Engine {
-	engine := &Engine{}
-	var err error
-	engine.Config, err = LoadConfig()
+	configPath, err := GetDefaultConfigPath()
+	if err != nil {
+		log.Fatalf("Unable to get default config path: %v", err)
+	}
+	config, err := LoadConfig(configPath)
 	if err != nil {
 		log.Fatalf("Unable to load config: %v", err)
 	}
+	return NewEngineWithConfig(config)
+}
+
+func NewEngineWithConfig(config *Config) *Engine {
+	engine := &Engine{}
+	engine.Config = config
 	//engine.DbInit()
 	engine.dbFilename          = engine.Config.Server.DBFile
 	engine.DB                  = NewDB(engine.dbFilename, engine.Config)

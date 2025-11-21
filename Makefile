@@ -22,7 +22,7 @@ define BUILD_TARGET
 	@echo "Building $(1) $(2) version ${VERSION}"
 	GOOS=${TARGET_GOOS} GOARCH=${TARGET_ARCH} CGO_ENABLED=0 ${CMD} ${LDFLAGS} -o bin/gosort_$(1).${VERSION}-${TARGET_ARCH}/${API_BINARY}$(3) ./cmd/api
 	GOOS=${TARGET_GOOS} GOARCH=${TARGET_ARCH} CGO_ENABLED=0 ${CMD} ${LDFLAGS} -o bin/gosort_$(1).${VERSION}-${TARGET_ARCH}/${CLIENT_BINARY}$(3) ./cmd/client
-	@cp -v config.yml.example bin/gosort_$(1).${VERSION}-${TARGET_ARCH}/config.yml.example
+	@cp -v config.yml.example bin/gosort_$(1).${VERSION}-${TARGET_ARCH}/.gosort.yml.example
 	@tar cvzf bin/gosort_$(1).${VERSION}-${TARGET_ARCH}.tar.gz -C bin gosort_$(1).${VERSION}-${TARGET_ARCH}
 endef
 
@@ -49,7 +49,7 @@ package:
 	@echo ""
 	@echo "Packaging Gosort ${VERSION}"
 	@cp -r bin gosort
-	@mv -v gosort/config.yml gosort/config.yml.example
+	@mv -v gosort/.gosort.yml gosort/.gosort.yml.example
 	@tar cvzf gosort.${VERSION}.tar.gz gosort
 	@echo "Package built!"
 	@rm -rf gosort
