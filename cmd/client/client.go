@@ -28,7 +28,13 @@ type Client struct {
 	Host string
 	//Engine *sortengine.Engine
 	config *sortengine.Config
-	FileList map[string]sortengine.Media
+	FileList []FileList
+}
+
+type FileList struct {
+	Filename string
+	Media sortengine.Media
+	Upload bool
 }
 
 func NewClient() *Client {
@@ -39,14 +45,46 @@ func NewClient() *Client {
 		fmt.Printf("Error loading config: %s\n", err.Error())
 		os.Exit(1)
 	}
-	client.FileList = make(map[string]sortengine.Media)
+	client.FileList = make([]FileList, 0)
 	return client
 }
 
 var client *Client = NewClient()
 
 func (c *Client) AddFile(media *sortengine.Media) {
-	c.FileList[media.Filename] = *media
+	media.SetChecksum()
+	c.FileList = append(c.FileList, FileList{Filename: media.Filename, Media: *media, Upload: false})
+}
+
+func (c *Client) GetVersion() (string, error) {
+	var body bytes.Buffer
+	request, err := http.NewRequest("GET", fmt.Sprintf("http://%s/version", c.config.Client.Host), &body)
+	if err != nil {
+		fmt.Printf("Error creating request: %s\n", err.Error())
+		return "", err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	client := &http.Client{}
+	response, err := client.Do(request)
+	if err != nil {
+		fmt.Printf("Error sending request: %s\n", err)
+		return "", err
+	}
+	defer response.Body.Close()
+
+	responseBody, _ := io.ReadAll(response.Body)
+
+	type ServerVersion struct {
+		Version string `json:"version"`
+	}
+	var sver ServerVersion
+
+	err = json.Unmarshal(responseBody, &sver)
+	if err != nil {
+		fmt.Printf("Error unmarshalling response: %s\n", err.Error())
+		return "", err
+	}
+	return sver.Version, nil
 }
 
 func (c *Client) CheckForChecksums(medias []sortengine.Media) (map[string]bool, error) {
@@ -67,7 +105,7 @@ func (c *Client) CheckForChecksums(medias []sortengine.Media) (map[string]bool, 
 	for _, media := range medias {
 		md5sum, err := checksum(media.Filename)
 		if err != nil {
-			fmt.Printf("Error calculating checksum: %s\n", err.Error())
+			fmt.Printf("Error calculating checksum for %s: %s\n", media.Filename, err.Error())
 			return make(map[string]bool, 0), err
 		}
 		fileMap[md5sum] = media
@@ -119,6 +157,76 @@ func (c *Client) CheckForChecksums(medias []sortengine.Media) (map[string]bool, 
 	return responseData["results"], nil
 }
 
+func (c *Client) CheckForChecksum100ks(medias []sortengine.Media) (map[string]bool, error) {
+	// Create buffer to hold multipart form data
+	
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	// Create a map of checksums to filenames
+	fileMap := make(map[string]sortengine.Media)
+
+	type ChecksumList struct {
+		Checksums []string `json:"checksums"`
+	}
+
+	checksumList := ChecksumList{Checksums: make([]string, 0)}
+
+	for _, media := range medias {
+		md5sum, err := checksum100k(media.Filename)
+		if err != nil {
+			fmt.Printf("Error calculating checksum for %s: %s\n", media.Filename, err.Error())
+			return make(map[string]bool, 0), err
+		}
+		fileMap[md5sum] = media
+		checksumList.Checksums = append(checksumList.Checksums, md5sum)
+	}
+
+	dataBytes, err := json.Marshal(checksumList)
+	if err != nil {
+		fmt.Printf("Error marshalling checksums: %s\n", err.Error())
+		return make(map[string]bool, 0), err
+	}
+
+	dataPart, err := writer.CreateFormField("checksums")
+	if err != nil {
+		fmt.Printf("Error creating form field: %s\n", err.Error())
+		return make(map[string]bool, 0), err
+	}
+
+	dataPart.Write(dataBytes)
+
+	writer.Close()
+
+	request, err := http.NewRequest("POST", fmt.Sprintf("http://%s/checksum100k", c.config.Client.Host), &body)
+	if err != nil {
+		fmt.Printf("Error creating request: %s\n", err.Error())
+		return make(map[string]bool, 0), err
+	}
+
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+
+	// Send it
+	client := &http.Client{}
+	response, err := client.Do(request)
+	if err != nil {
+		fmt.Printf("Error sending request: %s\n", err.Error())
+		return make(map[string]bool, 0), err
+	}
+	defer response.Body.Close()
+
+	responseBody, _ := io.ReadAll(response.Body)
+	var responseData map[string]map[string]bool
+	//var responseData map[string]bool
+	err = json.Unmarshal(responseBody, &responseData)
+	if err != nil {
+		fmt.Printf("Error unmarshalling response: %s\n", err.Error())
+		return make(map[string]bool, 0), err
+	}
+	
+	return responseData["results"], nil
+}
+
 func (c *Client) ChecksumExists(media *sortengine.Media) bool {
 	checksums, err := c.CheckForChecksums([]sortengine.Media{*media})
 	if err != nil {
@@ -126,6 +234,20 @@ func (c *Client) ChecksumExists(media *sortengine.Media) bool {
 		return false
 	}
 	for _, v := range checksums {
+		// We only need the first one.
+		return v
+	}
+	return false
+}
+
+func (c *Client) Checksum100kExists(media *sortengine.Media) bool {
+	checksums, err := c.CheckForChecksum100ks([]sortengine.Media{*media})
+	if err != nil {
+		fmt.Printf("Error checking for checksums: %s\n", err.Error())
+		return false
+	}
+	for _, v := range checksums {
+		// We only need the first one.
 		return v
 	}
 	return false
@@ -141,11 +263,11 @@ func (c *Client) SendFile(media *sortengine.Media) error {
 	}
 	defer file.Close()
 
-	// // Check if checksum already exists on host
-	// if c.ChecksumExists(media) {
-	// 	fmt.Printf("Checksum already exists on server.  Skipping file.\n")
-	// 	return nil
-	// }
+	// Check if checksum100k already exists on host
+	if c.Checksum100kExists(media) && c.ChecksumExists(media) {
+		fmt.Printf("Checksum already exists on server.  Skipping file %s.\n", media.Filename)
+		return nil
+	}
 
 	// Create buffer.  This will hold our multipart form data
 	var body bytes.Buffer
@@ -213,6 +335,8 @@ func (c *Client) SendFile(media *sortengine.Media) error {
 		fmt.Printf("Error decoding response: %s\n", err.Error())
 		return err
 	}
+
+	fmt.Printf("Uploaded: %s\n", media.Filename)
 	
 	return nil
 }
@@ -268,19 +392,23 @@ func WalkFunc(path string, info os.FileInfo, err error) error {
 
 	// Process stuff
 	img := sortengine.NewMediaFile(path)
-	client.AddFile(img)
+	img.SetChecksum()
+	//client.AddFile(img)
+	client.SendFile(img)
 	return nil
 }
 
 func UploadFiles() {
-	for _, media := range client.FileList {
-		fmt.Printf("Uploading %s\n", media.Filename)
-		client.SendFile(&media)
+	count := 0
+	for _, file := range client.FileList {
+		count += 1
+		fmt.Printf("(%04d) Uploading %s\n", count, file.Media.Filename)
+		client.SendFile(&file.Media)
 	}
 }
 
 func WalkDir(dir string) (error) {
-	fmt.Printf("Gathering files, please wait...\n")
+	fmt.Printf("Scanning files, please wait...\n")
 	filepath.Walk(dir, WalkFunc)
 	UploadFiles()
 	return nil
@@ -298,6 +426,13 @@ func checksum100k(filename string) (string, error) {
 
 	// Get the file's checksum
 	var BUFSIZE int64 = 102400
+	finfo, err := os.Stat(filename)
+	if err != nil {
+		return "", err
+	}
+	if finfo.Size() < BUFSIZE {
+		BUFSIZE = finfo.Size()
+	}
 	_, err = io.CopyN(h, f, BUFSIZE)
 	if err != nil {
 		return "", err
@@ -307,6 +442,27 @@ func checksum100k(filename string) (string, error) {
 
 func printVersion() {
 	fmt.Printf("GoSort Client Version: %s\n", Version)
+}
+
+func CheckVersion() {
+	// Get version from server and compare with client version.
+	serverVersion, err := client.GetVersion()
+	if err != nil {
+		fmt.Printf("Error getting version: %s\n", err.Error())
+		os.Exit(1)
+	}
+	var compareString string
+	if serverVersion == Version {
+		compareString = "=="
+	} else {
+		compareString = "!="
+	}
+	fmt.Printf("Comparing client version with server version.\n")
+	fmt.Printf(" Client: %s %s Server: %s\n", Version, compareString, serverVersion)
+
+	if serverVersion != Version {
+		os.Exit(1)
+	}
 }
 
 func main() {
@@ -319,6 +475,8 @@ func main() {
 	//TestChecksum()
 	// TestUpload()
 	// os.Exit(0)
+
+	CheckVersion()
 
 	dir := os.Args[1]
 	WalkDir(dir)

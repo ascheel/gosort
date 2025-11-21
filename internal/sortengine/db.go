@@ -28,7 +28,9 @@ func NewDB(filename string, config *Config) *DB {
 
 func (d *DB) AddFileToDB(media *Media) error {
 	stmt := `INSERT INTO media (filename, checksum, checksum100k, size, create_date) VALUES (?, ?, ?, ?, ?)`
-	media.SetChecksum()
+	if len(media.Checksum) == 0 {
+		media.SetChecksum()
+	}
 	_, err := d.db.Exec(
 		stmt,
 		media.Filename,
@@ -57,6 +59,21 @@ func (d *DB) DbExec(stmt string) error {
 
 func (d *DB) MediaInDB(media *Media) (bool) {
 	return d.ChecksumExists(media.Checksum)
+}
+
+func (d *DB) Checksum100kExists(checksum string) (bool) {
+	stmt, err := d.db.Prepare("SELECT count(*) FROM media WHERE checksum100k = ?")
+	if err != nil {
+		log.Fatal("Unable to prepare checksum100k statement.")
+	}
+	defer stmt.Close()
+	var result int
+	stmt.QueryRow(checksum).Scan(&result)
+	if result == 0 {
+		return false
+	} else {
+		return true
+	}
 }
 
 func (d *DB) ChecksumExists(checksum string) (bool) {

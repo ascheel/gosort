@@ -1,20 +1,14 @@
 package sortengine
 
 import (
-	// "database/sql"
-	// _ "github.com/mattn/go-sqlite3"
 	"log"
 	"os"
 	"path/filepath"
 	"fmt"
-	// "errors"
 	"io"
-	// "github.com/ascheel/gosort/internal/media"
 	"crypto/sha256"
 	"crypto/md5"
 	"hash"
-    // "golang.org/x/text/language"
-    // "golang.org/x/text/message"
 )
 
 func FileOrDirExists(path string) bool {
@@ -51,22 +45,6 @@ type Engine struct {
 	count uint64
 	Config *Config
 }
-
-// func (e *Engine) GetChecksum(checksum string) (bool) {
-// 	stmt, err := e.db.Prepare("SELECT count(*) FROM media WHERE checksum = ?")
-// 	if err != nil {
-// 		fmt.Printf("Unable to prepare SQL statement: %v\n", err)
-// 		os.Exit(1)
-// 	}
-// 	defer stmt.Close()
-// 	var result int
-// 	stmt.QueryRow(checksum).Scan(&result)
-// 	if result == 0 {
-// 		return false
-// 	} else {
-// 		return true
-// 	}
-// }
 
 func (e *Engine) GetNewFilename(m *Media) (string) {
 	// fmt.Printf("  Getting new filename: %s\n",

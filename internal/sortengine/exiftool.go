@@ -25,11 +25,13 @@ func GetExiftool() *Exiftool {
 		if err != nil {
 			fmt.Printf("Error creating exiftool: %s\n", err)
 			panic(err)
-		} else {
-			fmt.Println("Exiftool created.")
 		}
 	}
 	return et
+}
+
+func (e *Exiftool) Close() {
+	e.et.Close()
 }
 
 func (e *Exiftool) ReadMetadata(filename string) map[string]string {

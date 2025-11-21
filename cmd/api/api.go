@@ -19,6 +19,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/signal"
 
 	//"path"
 	"path/filepath"
@@ -36,14 +37,13 @@ type Status struct {
 	Status string	`json:"status"`
 }
 
-var images = []sortengine.Media{
-	{Filename: "test1.jpg", Path: "/dir1", Size:1000000},
-	{Filename: "test2.jpg", Path: "/dir1", Size:2000000},
+type Stats struct {
+	Count int `json:"count"`
 }
 
-func getStatus200(c *gin.Context) {
-	c.IndentedJSON(http.StatusOK, images)
-}
+var engine = sortengine.NewEngine()
+
+var stats = Stats{Count: 0}
 
 func logRequestMiddleware(c *gin.Context) {
 	bodyBytes, err := io.ReadAll(c.Request.Body)
@@ -66,8 +66,11 @@ func logRequestMiddleware(c *gin.Context) {
 	fmt.Printf("Request Headers: %v\n\n", c.Request.Header)
 }
 
+func giveVersion(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"version": Version})
+}
+
 func pushFile(c *gin.Context) {
-	engine := sortengine.NewEngine()
 	// Must bring in the following data:
 	// Binary data named "file"
 	// Media struct (populated) named "media"
@@ -98,12 +101,10 @@ func pushFile(c *gin.Context) {
 
 	// Check if checksum exists
 	if engine.DB.ChecksumExists(media.Checksum) {
+		fmt.Printf("Checksum exists: %s\n", media.Checksum)
 		c.JSON(409, gin.H{"status": "exists"})
 		return
 	}
-
-	shortFilename := filepath.Base(data.Filename)
-	fmt.Printf("Uploaded file: %s\n", shortFilename)
 
 	newFilename := engine.GetNewFilename(&media)
 	tmpFilename := fmt.Sprintf("%s.download", newFilename)
@@ -135,12 +136,20 @@ func pushFile(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "success"})
+
+	shortFilename := filepath.Base(data.Filename)
+	stats.Count += 1
+	fmt.Printf("(%03d) Uploaded file: %s\n", stats.Count, shortFilename)
 }
 
 func checksumExists(checksum string) bool {
-	engine := sortengine.NewEngine()
 	// db := NewDB("./gosort.db")	// Clean this up to make it secure if necessary
 	return engine.DB.ChecksumExists(checksum)
+}
+
+func checksum100kExists(checksum string) bool {
+	// db := NewDB("./gosort.db")	// Clean this up to make it secure if necessary
+	return engine.DB.Checksum100kExists(checksum)
 }
 
 func checkFile(c *gin.Context) {
@@ -152,7 +161,7 @@ func checkFile(c *gin.Context) {
 }
 
 func checkChecksums(c *gin.Context) {
-	fmt.Printf("Request: %+v\n", c.Request)
+	//fmt.Printf("Request: %+v\n", c.Request)
 
 	form, err := c.MultipartForm()
 	if err != nil {
@@ -178,12 +187,38 @@ func checkChecksums(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"results": results})
 }
 
+func checkChecksum100k(c *gin.Context) {
+	//fmt.Printf("Request: %+v\n", c.Request)
+
+	form, err := c.MultipartForm()
+	if err != nil {
+		fmt.Printf("Error getting form: %s\n", err.Error())
+		c.String(http.StatusBadRequest, fmt.Sprintf("get multipart form err: %s", err.Error()))
+		return
+	}
+
+	var results = make(map[string]bool)
+	var checksumData map[string][]string
+
+	err = json.Unmarshal([]byte(form.Value["checksums"][0]), &checksumData)
+	if err != nil {
+		fmt.Printf("Error unmarshalling JSON: %s\n", err.Error())
+		c.String(http.StatusBadRequest, fmt.Sprintf("Error unmarshalling JSON: %s", err.Error()))
+		return
+	}
+	checksumList := checksumData["checksums"]
+	for _, md5sum := range checksumList {
+		results[md5sum] = checksum100kExists(md5sum)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"results": results})
+}
+
 func printVersion() {
 	fmt.Printf("GoSort API Version: %s\n", Version)
 }
 
 func checkSaveDir() {
-	engine := sortengine.NewEngine()
 	if _, err := os.Stat(engine.Config.Server.SaveDir); os.IsNotExist(err) {
 		fmt.Printf("Save directory does not exist: %s\n", engine.Config.Server.SaveDir)
 		os.Exit(1)
@@ -192,12 +227,26 @@ func checkSaveDir() {
 
 func main() {
 	printVersion()
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	go func() {
+		for sig := range c {
+			fmt.Printf("Received SIGINT: %v\n", sig)
+			sortengine.GetExiftool().Close()
+			os.Exit(1)
+		}
+	}()
+
+	ip := engine.Config.Server.IP
+	port := engine.Config.Server.Port
 	checkSaveDir()
 	router := gin.Default()
-	router.Use(logRequestMiddleware)
-	router.GET("/status", getStatus200)
+	//router.Use(logRequestMiddleware)
 	router.POST("/file", pushFile)
 	router.GET("/file", checkFile)
 	router.POST("/checksums", checkChecksums)
-	router.Run("localhost:8080")
+	router.POST("/checksum100k", checkChecksum100k)
+	router.GET("/version", giveVersion)
+	router.Run(fmt.Sprintf("%s:%d", ip, port))
 }
