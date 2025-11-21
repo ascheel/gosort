@@ -5,7 +5,6 @@ go 1.22.4
 require (
 	github.com/barasher/go-exiftool v1.10.0
 	github.com/gin-gonic/gin v1.10.0
-	github.com/kolesa-team/goexiv v1.2.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.31.1
 )
